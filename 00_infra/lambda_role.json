@@ -1,0 +1,12 @@
+{
+  "RoleName": "tinyllama-lambda-role",
+  "AssumeRolePolicyDocument": {
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": { "Service": "lambda.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }]
+  },
+  "Description": "Executes tinyllama router"
+}
