@@ -1,12 +1,12 @@
-# TinyLlama MVP & Architecture
+# Aistratus
 
-This project documents and implements the end-to-end AWS-based architecture for a scalable, personalized TinyLlama cloud system, including diagrams, DevOps, and all supporting scripts.
+Aistratus is a cloud-native orchestration platform for personalized Large Language Models (LLMs), designed for scalability, automation, and integration on AWS.
+
 ## Recent Milestones
 
-- **2025-05-26**: Finalized and published TinyLlama MVP architecture (v1.2).
-- MVP: hibernated EC2 inference node, user-selectable LoRA weights, and robust CI/CD pipeline.
-- All new architecture diagrams and code now tracked in this public repo.
-- Full AWS implementation phase begins.
+- **2025-06-04**: Project renamed and repositioned as a cloud LLM orchestration platform (formerly TinyLlama MVP).
+- Full end-to-end AWS implementation (Lambda, S3, IAM, CI/CD).
+- TinyLlama MVP is now included as a demonstration module within the broader Aistratus framework.
 
 **Author:** Rusbeh Abtahi  
 **Email:** roosbab@gmail.com  
