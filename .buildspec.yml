@@ -1,15 +1,20 @@
-ersion: 0.2
+version: 0.2
 
 phases:
   install:
     runtime-versions:
       python: 3.12
+
   build:
     commands:
+      - echo "Starting build..."
       - zip -r router.zip 01_src/tinyllama/orchestration/lambda_router
+
   post_build:
     commands:
-      - aws lambda update-function-code --function-name tinyllama-router --zip-file fileb://router.zip
+      - aws lambda update-function-code \
+          --function-name tinyllama-router \
+          --zip-file fileb://router.zip
 
 artifacts:
   files:
