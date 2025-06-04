@@ -12,9 +12,7 @@ phases:
 
   post_build:
     commands:
-      - aws lambda update-function-code \
-          --function-name tinyllama-router \
-          --zip-file fileb://router.zip
+      - aws lambda update-function-code --function-name tinyllama-router --zip-file fileb://router.zip
 
 artifacts:
   files:
