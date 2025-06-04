@@ -1,0 +1,35 @@
+@startuml
+actor User
+
+participant "Step 1:\nUser Shell (CLI)" as User_CLI
+participant "Step 2:\nAWS CLI" as AWS_CLI
+participant "Step 3:\nhandler.py (extract event)" as Handler1
+participant "Step 4:\nhandler.py (write S3)" as Handler2
+participant "Step 5:\nhandler.py (return result)" as Handler3
+participant "Step 6:\nUser Shell (CLI)" as User_Download
+participant "Step 7:\nS3" as S3
+
+== 1. User triggers Lambda ==
+User -> User_CLI: Run\naws lambda invoke --function-name tinyllama-router\n--payload '{"body":"{\"prompt\":\"Hello, world!\"}"}' output.json
+
+== 2. AWS CLI sends request ==
+User_CLI -> AWS_CLI: Formats and sends payload to AWS Lambda
+
+== 3. Lambda executes handler.py (extract event) ==
+AWS_CLI -> Handler1: handler(event, context)\n(event = {body: ...})
+Handler1 -> Handler1: body = json.loads(event.get("body", "{}"))\nprompt = body.get("prompt", "")
+
+== 4. handler.py writes to S3 ==
+Handler1 -> Handler2: boto3.client('s3').put_object(\n  Bucket=DATA_BUCKET,\n  Key=key,\n  Body=prompt.encode()\n)
+
+== 5. handler.py returns result ==
+Handler2 -> Handler3: return {"statusCode":200, "body":"{\"saved\": \"inputs/<UUID>.txt\"}"}
+
+== 6. User downloads from S3 ==
+User -> User_Download: Run\naws s3 cp s3://tinyllama-data-.../inputs/<UUID>.txt .
+
+== 7. S3 returns the file ==
+User_Download -> S3: Requests file from S3
+S3 -> User_Download: Returns file with content "Hello, world!"
+
+@enduml
