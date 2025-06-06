@@ -3,104 +3,92 @@ from diagrams.aws.compute import Lambda, EC2, EC2ImageBuilder
 from diagrams.aws.network import APIGateway, CloudFront
 from diagrams.aws.security import Cognito, SecretsManager
 from diagrams.aws.database import Elasticache
-from diagrams.aws.storage import S3
+from diagrams.aws.storage import S3, EBS
 from diagrams.aws.management import SystemsManager, Cloudwatch
 from diagrams.aws.devtools import Codepipeline, Codebuild
-from diagrams.aws.general import Users
 from diagrams.aws.cost import Budgets
 from diagrams.generic.blank import Blank
 
-graph_attr = {
-    "fontsize": "20",
-    "splines": "ortho",
-    "penwidth": "2",
-    "nodesep": "1.0",
-    "ranksep": "1.0"
-}
-edge_attr = {
-    "fontsize": "16",
-    "penwidth": "2",
-    "fontcolor": "black",
-    "color": "#333333"
-}
+graph_attr = {"fontsize": "20", "splines": "ortho", "penwidth": "2"}
+edge_attr  = {"fontsize": "16", "penwidth": "2", "color": "#333333"}
 
-for ext in ["png", "svg"]:
+for fmt in ("png", "svg"):
     with Diagram(
-        name="tinyllama_architecture",
-        filename=f"tinyllama_architecture",
-        outformat=ext,
-        show=False,
+        "tinyllama_architecture_final",
+        filename="tinyllama_architecture_final",
+        outformat=fmt,
+        direction="LR",
         graph_attr=graph_attr,
         edge_attr=edge_attr,
-        direction="LR",
+        show=False,
     ):
 
-        # User & Entry Point
-        mobile_app = Users("Mobile App\nFlutter")
+        # Entry (Desktop app or CLI) – generic user icon
+        desktop_user = Blank("Desktop Client\n(HTTP + JWT)")
 
-        # Edge/API
         with Cluster("Edge / API"):
             cf = CloudFront("CloudFront (optional)")
-            api_gw = APIGateway("API Gateway")
-            cognito = Cognito("Cognito JWT Auth")
-        mobile_app >> Edge(label="HTTPS") >> cf >> api_gw
-        mobile_app >> Edge(style="dotted", label="Auth flow") >> cognito
+            api_gw = APIGateway("API Gateway\nHTTP API")
+            cognito = Cognito("Cognito\nJWT Auth")
+
+        desktop_user >> Edge(label="HTTPS") >> cf >> api_gw
+        desktop_user >> Edge(style="dotted", label="Auth flow") >> cognito
         cognito >> Edge(style="dotted", label="Authorizer") >> api_gw
 
-        lambda_router = Lambda("Lambda Router")
+        # Core router
+        lambda_router = Lambda("Lambda Router v2\n(modular providers)")
         api_gw >> lambda_router
 
-        redis = Elasticache("ElastiCache (Redis)")
-        lambda_router >> Edge(label="Enqueue (job)") >> redis
+        # Job queue
+        redis = Elasticache("ElastiCache Redis\nTTL 5 min")
+        lambda_router >> Edge(label="Enqueue job") >> redis
 
-        # CI/CD Pipeline
-        with Cluster("CI/CD Pipeline"):
-            secrets = SecretsManager("Secrets Manager\nAPI & Keys")
+        # CI/CD
+        with Cluster("CI / Image Pipeline"):
+            secrets = SecretsManager("Secrets Manager")
             codepipe = Codepipeline("CodePipeline")
-            codebuild = Codebuild("CodeBuild\nbuild+tests")
-            img_builder = EC2ImageBuilder("EC2 Image Builder\n(AMI bake)")
-            terraform = Blank("Terraform Cloud")
-            ebs_snap = Blank("EBS Snapshot\n(/model + /docker_cache)")
+            codebuild = Codebuild("CodeBuild\nunit tests ≥90 %")
+            img_builder = EC2ImageBuilder("EC2 Image Builder\nAMI bake")
+            budgets = Budgets("AWS Budgets\n€15 warn / €20 stop")
+
+        secrets >> lambda_router            # get OpenAI / provider keys
+        secrets >> codebuild
 
         codepipe >> codebuild
         codebuild >> Edge(label="Build AMI") >> img_builder
-        codebuild >> Edge(label="Create snapshot\n/model + /docker_cache") >> ebs_snap
-        codebuild >> Edge(label="IaC plan/apply") >> terraform
-        terraform >> Edge(label="Update Launch Template\nAMI & Snapshot") >> img_builder
-        terraform >> Edge(label="Update Launch Template\nAMI & Snapshot") >> ebs_snap
-        terraform >> Edge(label="StopInstances\n(post-deploy)", style="dotted") >> Blank("X1\nHibernated EC2 (g4dn/g5)")  # visual aid for reviewers
-        secrets >> Edge(label="Get/Put") >> lambda_router
-        secrets >> Edge(label="Get") >> codebuild
 
-        # Compute: X1 (Inference), Y1 (Trainer)
-        with Cluster("Compute Nodes"):
-            # X1 persistent hibernating inference node
-            x1 = EC2("X1\nHibernated EC2 (g4dn/g5)")
-            ebs = Blank("Hibernate EBS\n100GB NVMe")
-            redis >> Edge(label="Dequeue\n(wake if hibernated)") >> x1
-            x1 >> Edge(label="RAM→EBS\n(hibernate)", style="dotted") >> ebs
+        # Compute cluster
+        with Cluster("Inference & Training"):
 
-            # Inference response path (green dashed) ALL the way back
-            x1 >> Edge(label="Response", style="dashed", color="green") >> lambda_router
-            lambda_router >> Edge(label="Response", style="dashed", color="green") >> api_gw
-            api_gw >> Edge(label="Response", style="dashed", color="green") >> cf
-            cf >> Edge(label="Response", style="dashed", color="green") >> mobile_app
+            # Inference node (hibernated)
+            x1 = EC2("X1 Hibernated EC2\ng4dn/g5")
+            ebs_cache = EBS("100 GB gp3 cache")
+            redis >> Edge(label="Dequeue / wake") >> x1
+            x1 >> Edge(style="dotted", label="RAM→EBS (hibernate)") >> ebs_cache
+            x1 >> Edge(style="dashed", color="green", label="Response") >> lambda_router
 
-            # Y1 transient strong training node
-            y1 = EC2("Y1\nTraining EC2 (p4/p5, ephemeral)")
-            y1 >> Edge(label="Upload new weights") >> S3("S3\n(LoRA, weights, ckpt)")
-            y1 >> Edge(label="Trigger artefact rebuild") >> codepipe
+            # Trainer node (ephemeral)
+            y1 = EC2("Y1 Trainer EC2\np4d (ephemeral)")
+            s3_models = S3("S3 tinyllama-models")
+            y1 >> Edge(label="Upload new LoRA") >> s3_models
+            y1 >> Edge(label="Notify rebuild") >> codepipe
 
-        # Model Registry & Logging
-        model_s3 = S3("Model Registry\nS3 + LakeFS")
-        x1 << Edge(label="Copy weights on wake") >> model_s3
+        # Router response path to user (green dashed)
+        lambda_router >> Edge(style="dashed", color="green", label="Response") >> api_gw
+        api_gw >> Edge(style="dashed", color="green", label="Response") >> cf
+        cf >> Edge(style="dashed", color="green", label="Response") >> desktop_user
+
+        # Ops & Monitoring
         ssm = SystemsManager("SSM RunCommand")
-        cw = Cloudwatch("CloudWatch\nlogs + metrics")
-        x1 >> ssm >> cw
-        lambda_router >> cw
-        budget = Budgets("AWS Budgets\n$ guardrail")
-        cw >> budget
+        cloudwatch = Cloudwatch("CloudWatch\nlogs + metrics")
+        sns_training = Blank("SNS training-complete")
+        budgets >> Edge(style="dotted", label="Alerts") >> desktop_user
 
-        legend = Blank(
-            "Legend:\nsolid = data path\n dashed = external/optional\n dotted = Mgmt/ops\n green = response"
-        )
+        x1 >> ssm >> cloudwatch
+        lambda_router >> cloudwatch
+        s3_models >> cloudwatch
+        y1 >> sns_training
+        sns_training >> desktop_user    # optional desktop alert
+
+        # Legend
+        legend = Blank("Legend:\nsolid = data path\n dashed green = inference response\n dotted = ops/alerts")
