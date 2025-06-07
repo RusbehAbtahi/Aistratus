@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *.so
 
+05_docs/97_logs_private/
+
 # C extensions
 *.pyd
 
@@ -66,6 +68,10 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+# Obsidian
+.obsidian/
+
 
 # IPython
 profile_default/

@@ -61,21 +61,21 @@ for fmt in ("png", "svg"):
         lambda_router = Lambda("Lambda Router v2")
         api_gw >> lambda_router
 
-        redis = Elasticache("ElastiCache Redis\n(job TTL 5 min)")
+        redis = Elasticache("ElastiCache Redis\n(job TTL 5 min)")
         lambda_router >> Edge(label="Enqueue job") >> redis
 
         # 3) Inference VPC (private subnet)
         with Cluster("VPC – private subnets"):
-            gpu = EC2("X1 EC2\ng4dn.xlarge\n(hibernated)")
-            ebs_cache = EBS("100 GiB gp3 cache")
+            gpu = EC2("X1 EC2\ng4dn.xlarge\n(stop/start,\nno RAM preservation)")
+            ebs_cache = EBS("100 GiB gp3 cache")
             redis >> Edge(label="Dequeue / wake") >> gpu
-            gpu >> Edge(style="dotted", label="RAM→EBS\n(hibernate)") >> ebs_cache
+            gpu >> Edge(style="dotted", label="Stop/Start\n(no RAM preservation)") >> ebs_cache
 
             # NAT Gateway for outbound S3 / updates
             nat = NATGateway("NAT GW")
             gpu >> Edge(style="dotted", label="HTTPS egress") >> nat
 
-            s3_models = S3("S3 tinyllama‑models")
+            s3_models = S3("S3 tinyllama-models")
             nat >> s3_models  # implicit outbound path
 
             kms = KMS("KMS CMK")
@@ -90,17 +90,17 @@ for fmt in ("png", "svg"):
             secrets    = SecretsManager("Secrets Manager")
             codepipe   = Codepipeline("CodePipeline")
             codebuild  = Codebuild("CodeBuild\nunit tests ≥90%")
-            img_build  = EC2ImageBuilder("EC2 Image Builder\nAMI bake")
+            img_build  = EC2ImageBuilder("EC2 Image Builder\nAMI bake")
             budgets    = Budgets("AWS Budgets\n€15 warn / €20 stop")
             config     = Node("AWS Config\nrules")
 
-        secrets >> Edge(label="OpenAI key") >> lambda_router
+        secrets >> Edge(label="OpenAI key") >> lambda_router
         codepipe >> codebuild
         codebuild >> Edge(label="Build AMI") >> img_build
         codebuild >> Edge(label="Deploy Lambda") >> lambda_router
 
         # 5) Management & Monitoring
-        ssm = SystemsManager("SSM RunCommand\n(sync‑lora)")
+        ssm = SystemsManager("SSM RunCommand\n(sync-lora)")
         cw  = Cloudwatch("CloudWatch\nmetrics + logs")
 
         gpu >> ssm >> cw
@@ -114,5 +114,5 @@ for fmt in ("png", "svg"):
         api_gw >> Edge(style="dashed", color="green", label="Response") >> cf
         cf >> Edge(style="dashed", color="green", label="Response") >> desktop
 
-        # 7) Legend (right‑most)
+        # 7) Legend (right-most)
         Blank("Legend:\n• solid = data path\n• dashed green = inference response\n• dotted = ops / security / alerts")
