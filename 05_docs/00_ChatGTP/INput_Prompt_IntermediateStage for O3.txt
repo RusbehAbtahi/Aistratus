@@ -1,0 +1,157 @@
+SYSTEM: You are a Senoir AWS Architekt and an expert Software Developer and an expert in LLM SYSTEMS:
+
+
+CONTEXT:
+
+WE want to have based on your own TL-FIF Architecture v1.0, a detailed requirement list
+This requirment list must be so concrete and detailed that, if I give it to antoher Chat without our chat history, it must be able to implement the codes, without additional information
+
+-I want you to consider TL-FIF as your base architucture
+-Consider my as Product Owner. This is what I want from you:
+     
+        a- You must construct an automated Pipliine where I can see how you develope and update AMI automatically
+        b- I dont want any personalized Tinnyllama, but I want a complete TinnyLlama model with some already trained weights (via free download) which can anscer me in English
+        c- You must remember that. after  this intermediate stage, We are going to build another pipeline for Training and versioning different personal TinnyLlama model. We dont need, to implement our system for that, but you must implement the intermediate stage, so that, we can easily improve it for this complex system   
+        d-My understading as Product owner is: We have an AMI, we initiate a new EC2, we copy AMI on it. Then I send my prompt to EC2 with AMI , and the TinnyLlama respons, somehow comebacks automatically in my Python GUI on Local computer.  In my GUI , I have options as follow: Push button for sending my prompt, Push Button for immediate termination of EC2, a input box for idle Time out, time.. A input box ,for typeing my input prompt.. an OUtput Text.Frame for seeing the response of TinnyLlama, A Text Box, we live report of my current AWS costs. Although I dont want a training system for this intermediate stage, however I want creation of AMI be automated. So that if I changed something in GitHub, I expect a new AMI to be generated automatically.. 
+
+YOUR OUTPUT
+           
+      I-You must consider all these points, see if my understanding of situation is "Collectuvely exhaustive and individually necsessary". If i have misunderstood anything here, or have forgotten an important step, you must remind me. 
+      II-I need you AUDIT for any future shock.. I give you an example about our today SHOCK: "You had offered me, we have hibernate EC2, we played we this offer for 1 month and now today you told me , EC2 with GPU cannnot be hibernated. We could have known this last month. I want you to review the whole system and warn me if you see any think like this.. I want no suprises in future and this project MUST work.
+
+      III-Use your maximum power, token output.. and give me a detailed Requirement list (only after you were sure , there is no misunderstanding between us) .  Remember I dont want some conceptual requirement, I want industerial level , requirement list. EVERYTHING must be considered. it must be causual, and i, as product owner, must be able to read it and followi it easily... So I expect you beging from User perspective and write requirement from There.. GUI, USER inputs, and user outputs... Then you can go into backend, Database, and AWS internal services... 
+      IV-In your requirement I want every line which is not from Product OWner wish, to be explained. Example: A push Button, for terminating EC2 via user doenst need additional explanation because it is my wish (Product Owner wish) but An AWS SErvice "XXX", which I dont know but you have suggested, must be explained in a line. I as product owner must undrstand why you chose these services.
+
+At this stage I dont want table.. I want a professional Requirement List. Like 1, 2, 3, 4.... and with sub categories 1.1.1, 3.2.4 , something like this. 
+
+
+---------------------------------------------
+One line answer , what do you mean from: 
+"so answers are coherent out-of-the-box."
+
+I dont understand what you mean here- Please explain in a single paragraph:
+ 
+"1-GPU instance quotas: new accounts start with 0 g4/g5; submit a quota-increase ticket now (24-48 h SLA)."
+
+
+
+
+SYSTEM: You are a Senoir AWS Architekt and an expert Software Developer and an expert in LLM SYSTEMS:
+
+Context:
+-I am ok with your decisions. AT this stage we work only on "on-demand" as use said
+-I am also OK with the structure of your "RQL 1" very good.
+
+Now I want to ask, if you are able to use the same structure for RQL 1 , but write more implementation details and reseasong, or even some paragraphs for them. 
+
+
+If writting so much text is, too much for you. Please do it in several parts. I want a more detailed requirements list.. Not only paragraphs.. but some explanations. 
+You are ofcourse the expert here and I am product owner. I want only a more user friendly and detailed requirement list. 
+
+
+
+
+"RQL 1"
+TL-FIF v1.0 – Industrial-Grade REQUIREMENT LIST
+Numeric headers = user-facing → back-end → infra. Any line not explicitly requested by you carries a brief rationale.
+
+1 Desktop GUI (Python Tkinter; cross-platform)
+1.1 Window must display:
+ 1.1.1 Input textbox for prompt (multiline).
+ 1.1.2 Send button → triggers inference.
+ 1.1.3 Stop GPU button → calls API to stop EC2 immediately.
+ 1.1.4 Idle-timeout field (integer minutes); default = 5; sent with every request.
+ 1.1.5 Live cost label (updates every 30 s, reads CloudWatch custom metric CurrentSpendEUR).
+ 1.1.6 Scrollable output pane showing model reply + latency stamp.
+
+1.2 Networking: GUI never holds AWS keys. It signs HTTPS requests with AWS Cognito-issued ID token (simple hosted UI).
+ Rationale: avoids storing access/secret keys on the laptop.
+
+1.3 Resilience: if GUI loses connection, autoretry ×3 then pop up “Server cold-starting, please wait ~2 min”.
+
+2 External API Layer
+2.1 API Gateway (HTTP) endpoint /infer (POST JSON).
+2.2 Validates JWT (Cognito).
+2.3 Forwards body to Lambda Router v2.
+
+Rationale: keeps laptop off VPC, hides EC2 IP.
+
+3 Lambda Router v2 (Python 3.12, 512 MB, 30 s)
+3.1 Checks Ec2State via describe_instances.
+3.2 If state ≠ running, issues StartInstances; returns JSON {status:"starting", eta_seconds:90}.
+3.3 Else posts job {id, prompt, timeout} to Redis queue.
+3.4 Publishes CloudWatch metric ColdStarts +1 whenever it boots GPU.
+3.5 NEW: Updates DynamoDB ActiveSessions (user → instance-id) for multi-user tracking.
+ Rationale: DynamoDB gives O(1) look-ups for future multi-tenant routing.
+
+4 Job Queue
+4.1 ElastiCache Redis 6.2 (single-node) in private subnet.
+4.2 Key schema job:{uuid} → prompt JSON, TTL = 300 s.
+4.3 Security Group: inbound port 6379 from Lambda only.
+
+5 Inference EC2 (AMI-based)
+5.1 Type g4dn.xlarge, root EBS gp3 100 GiB, throughput 250 MiB/s.
+5.2 AMI build (see §7) installs: Ubuntu 22.04, CUDA 12, Python 3.10, vLLM 0.4.2, TinyLlama-1.1B-chat GGUF, run_vllm.service.
+5.3 On boot, /etc/rc.local posts “READY” to SSM parameter /tl-fif/ready/<instance-id>.
+5.4 vLLM listens on 127.0.0.1:8000; nginx reverse-proxy exposes :443 with TLS cert (ACM).
+5.5 SSM Agent installed; no SSH key on instance.
+
+5.6 Watcher daemon polls Redis; when job arrives:
+ • Runs inference via vLLM Python client.
+ • Publishes result JSON to S3 s3://tl-fif-responses/{job-id}.json.
+ • Resets idle-timer; if no job for <timeout> minutes, calls StopInstances on itself via IMDS v2 signed request.
+ Rationale: fully self-contained shutdown—no extra Lambda cost.
+
+6 Cost & Metrics
+6.1 CloudWatch Agent on EC2 pushes GPU util, memory %, latency p95.
+6.2 AWS Budgets monthly €20 alert → SNS Topic → Lambda BudgetKiller → stop EC2.
+6.3 Lambda Router writes custom metric CurrentSpendEUR every invocation (reads Cost Explorer GetCostAndUsage, granularity = HOURLY).
+6.4 GUI simply GetMetricStatistics to display cost.
+
+7 AMI Build & CI/CD Pipeline
+7.1 Packer template (ami.json) parameterised with:
+ base_os, weights_url, vllm_version.
+7.2 CodePipeline stages: Source (GitHub) → Build (CodeBuild) → Packer Build → AMI share to main account → Manual Approval → SSM Parameter Store /tl-fif/latest_ami_id.
+ Rationale: any commit to main triggers a fresh AMI; rollback = revert commit.
+
+7.3 AMI Lifecycle: keep last 5; deregister older to avoid quota.
+
+8 IAM Roles & Security
+8.1 tl-fif-gui-role: Trust = Cognito, Permissions = execute-api:Invoke on API ID.
+8.2 tl-fif-lambda-router-role: ec2:Start/Stop/Describe, elasticache:Publish, dynamodb:PutItem, cloudwatch:PutMetricData.
+8.3 tl-fif-ec2-role: s3:GetObject (weights, output bucket), ssm:PutParameter, ec2:StopInstances Self condition, cloudwatch:PutMetricData.
+8.4 tl-fif-codebuild-role: iam:PassRole, ec2:CreateImage, ssm:PutParameter.
+
+9 Networking / VPC
+9.1 One VPC /22, two private subnets (AZ a,b) for Redis + EC2, one public subnet for NAT GW.
+9.2 NLB in public subnet → Target Group (EC2).
+ Rationale: stable DNS + static Elastic IP; no GUI re-config on restarts.
+9.3 Lambda in private subnets via VPC-endpoint; API Gateway remains public.
+
+10 Disaster-Recovery & Compliance
+10.1 Daily EBS snapshot (AMI pipeline can reuse).
+10.2 S3 buckets versioned; Glacier Deep Archive after 30 days.
+10.3 AWS Config rules: encrypted-volumes, required-tags, no-public-S3.
+10.4 CloudTrail enabled across account.
+
+11 Future-Proof Hooks for Personal LoRA Stage
+11.1 Weights location parameter already abstracted (§7.1).
+11.2 Redis message includes adapter_s3_uri; watcher hot-swaps LoRA via vLLM --lora-dirs.
+11.3 SSM document train-tinyllama (empty placeholder) registered now for later fine-tune pipeline.
+
+IV Single Best-Fit Recommendation
+Implement TL-FIF exactly as specified above.
+• Fast: cold reply in <2 min; warm ≈ 1 s.
+• Cheap: only on-demand GPU minutes billed; build pipeline uses t3.medium.
+• Flexible: AMI rebuild + LoRA hot-swap already wired for future personal models.
+• No hidden blockers left.
+
+Once this requirement list is accepted, we can break it into user stories and start infrastructure-as-code.
+
+
+
+
+
+
+
+
