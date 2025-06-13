@@ -1,41 +1,75 @@
-import json                   # Imports the json module for encoding and decoding JSON data
-import tkinter as tk          # Imports the tkinter library and aliases it as tk for GUI components
-from tkinter import ttk       # Imports themed tkinter widgets (ttk) for a modern look
+import json, threading, time
+import tkinter as tk
+from tkinter import ttk
 
 
-class TinyLlamaGUI(tk.Tk):    # Defines a new class TinyLlamaGUI, which inherits from Tkinter's main window class
-    """Desktop prompt window (GUI-001)."""
+class TinyLlamaGUI(tk.Tk):
+    """Desktop prompt window (GUI-001 / GUI-002)."""
 
-    def __init__(self) -> None:           # Constructor method, initializes the GUI
-        super().__init__()                # Calls the parent (tk.Tk) constructor
-        self.title("TinyLlama Prompt")    # Sets the window title
+    # ---------- ctor ----------
+    def __init__(self) -> None:
+        super().__init__()
+        self.title("TinyLlama Prompt")
 
-        # 5 rows × 80 cols prompt box
-        self.prompt_box = tk.Text(self, width=80, height=5, wrap="word")  # Creates a multi-line Text widget for prompt input
-        self.prompt_box.pack(padx=10, pady=10)                            # Adds the prompt box to the window with padding
+        # prompt box: 5×80
+        self.prompt_box = tk.Text(self, width=80, height=5, wrap="word")
+        self.prompt_box.pack(padx=10, pady=10)
 
-        # Ctrl+Enter == Send
-        self.prompt_box.bind("<Control-Return>", self._on_send_event)     # Binds Ctrl+Enter key event to the _on_send_event handler
+        # send button + spinner
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(padx=10, pady=5, fill="x")
 
-        self.send_btn = ttk.Button(self, text="Send", command=self._on_send)  # Creates a Send button that calls _on_send when clicked
-        self.send_btn.pack(padx=10, pady=5)                                   # Adds the Send button to the window with padding
+        self.send_btn = ttk.Button(btn_frame, text="Send", command=self._on_send)
+        self.send_btn.pack(side="left")
 
-    # ————— helpers ————
+        self.spinner = ttk.Progressbar(
+            btn_frame, mode="indeterminate", length=120
+        )                                            # initially hidden
+
+        # Ctrl+Enter == send
+        self.prompt_box.bind("<Control-Return>", self._on_send_event)
+
+    # ---------- helpers ----------
     @staticmethod
-    def build_payload(text: str) -> str:                  # Static method to build a JSON payload from the input text
+    def build_payload(text: str) -> str:
         """Return JSON string preserving newlines."""
-        return json.dumps({"prompt": text})               # Converts a dictionary with the prompt text into a JSON-formatted string
+        return json.dumps({"prompt": text})
 
-    # ————— handlers ————
-    def _on_send_event(self, event):          # Event handler for Ctrl+Enter
-        self._on_send()                      # Calls the main send handler
-        return "break"                       # Prevents Tkinter from adding a newline on Ctrl+Enter
+    def _set_busy(self, busy: bool) -> None:
+        """Enable/disable send button & toggle spinner."""
+        if busy:
+            self.send_btn.state(["disabled"])
+            self.spinner.pack(side="left", padx=10)
+            self.spinner.start(10)                  # 10 ms per step
+        else:
+            self.spinner.stop()
+            self.spinner.pack_forget()
+            self.send_btn.state(["!disabled"])
 
-    def _on_send(self):                      # Main send handler for both button click and Ctrl+Enter
-        text = self.prompt_box.get("1.0", tk.END).rstrip("\n")  # Retrieves all text from the prompt box, strips trailing newlines
-        payload = self.build_payload(text)                      # Builds a JSON payload from the entered text
-        print(payload)                                          # Prints the payload (for now, as a stub for sending to API)
+    # ---------- handlers ----------
+    def _on_send_event(self, event):
+        self._on_send()
+        return "break"
+
+    def _on_send(self):
+        """Read prompt, disable UI, call API thread, re-enable on done."""
+        text = self.prompt_box.get("1.0", tk.END).rstrip("\n")
+        payload = self.build_payload(text)
+        self._set_busy(True)
+
+        # simulate (or later: real) API call in background thread
+        threading.Thread(
+            target=self._send_to_api, args=(payload,), daemon=True
+        ).start()
+
+    # ---------- backend ----------
+    def _send_to_api(self, payload: str) -> None:
+        """Stub that blocks 2 s then prints payload (simulate inference)."""
+        time.sleep(2)                               # 2-s artificial delay
+        print(payload)
+        # after thread completes, re-enable UI in main thread
+        self.after(10, lambda: self._set_busy(False))
 
 
-if __name__ == "__main__":           # Runs this code block only if the file is executed directly
-    TinyLlamaGUI().mainloop()        # Creates an instance of TinyLlamaGUI and starts the Tkinter event loop
+if __name__ == "__main__":
+    TinyLlamaGUI().mainloop()
