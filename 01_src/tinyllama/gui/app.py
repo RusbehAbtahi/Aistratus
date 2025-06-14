@@ -1,13 +1,22 @@
-#  app.py  – Desktop GUI — GUI-001…005  (test-safe cost-poller)
-import json, threading, time, requests, os, configparser, tkinter as tk
-from tkinter import ttk, messagebox
+# File: 01_src/tinyllama/gui/app.py
+
+import json
+import threading
+import time
+import requests
+import os
+import configparser
+import tkinter as tk
+from tkinter import ttk, messagebox, scrolledtext
+from datetime import datetime
 
 INI_PATH    = os.path.expanduser("~/.tl-fif.ini")
 INI_SECTION = "gui"
+_SCROLL_KEY = "scroll"
 _IS_TESTING = bool(os.environ.get("TL_TESTING"))
 
 class TinyLlamaGUI(tk.Tk):
-    """TinyLlama desktop GUI (prompt, spinner, stop-GPU, idle-timeout, live cost)."""
+    """TinyLlama GUI with prompt box, conversation pane, cost label, idle timeout, and GPU controls."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -15,28 +24,38 @@ class TinyLlamaGUI(tk.Tk):
         self.idle_minutes = self._load_idle_timeout()
         self.cost_var     = tk.StringVar(value="€ --.--")
 
-        # ------- Prompt -------
+        # ---------- Output pane (GUI-006) ----------
+        self.out_pane = scrolledtext.ScrolledText(self, width=80, height=15, state="disabled")
+        self.out_pane.pack(padx=10, pady=(10,0), fill="both", expand=True)
+        self.after(100, self._restore_scroll_position)
+
+        # ---------- Prompt ----------
         self.prompt_box = tk.Text(self, width=80, height=5, wrap="word")
         self.prompt_box.pack(padx=10, pady=10)
 
-        # ------- Controls -------
+        # ---------- Controls ----------
         ctrl = ttk.Frame(self); ctrl.pack(fill="x", padx=10, pady=5)
-        self.send_btn = ttk.Button(ctrl, text="Send", command=self._on_send); self.send_btn.pack(side="left")
+
+        self.send_btn = ttk.Button(ctrl, text="Send", command=self._on_send)
+        self.send_btn.pack(side="left")
         self.spinner  = ttk.Progressbar(ctrl, mode="indeterminate", length=120)
 
         ttk.Label(ctrl, text="Idle-min:").pack(side="left", padx=(15,2))
         self.idle_spin = ttk.Spinbox(ctrl, from_=1, to=30, width=3, command=self._on_idle_change)
-        self.idle_spin.set(str(self.idle_minutes)); self.idle_spin.pack(side="left")
+        self.idle_spin.set(str(self.idle_minutes))
+        self.idle_spin.pack(side="left")
 
         self.stop_btn = tk.Button(ctrl, text="Stop GPU", bg="#d9534f", fg="white", command=self._on_stop_gpu)
         self.stop_btn.pack(side="right", padx=(10,0))
 
+        # ---------- Live-cost label (GUI-005) ----------
         self.cost_label = tk.Label(self, textvariable=self.cost_var, font=("TkDefaultFont", 9))
         self.cost_label.pack(pady=(0,10))
 
+        # Key binding
         self.prompt_box.bind("<Control-Return>", self._on_send_event)
 
-        # cost-poller thread (disabled during tests)
+        # Start cost poller thread unless in test mode
         if not _IS_TESTING:
             threading.Thread(target=self._cost_poller, daemon=True).start()
 
@@ -45,35 +64,44 @@ class TinyLlamaGUI(tk.Tk):
         cfg = configparser.ConfigParser()
         if cfg.read(INI_PATH) and cfg.has_option(INI_SECTION, "idle"):
             try:
-                v = int(cfg[INI_SECTION]["idle"]); return max(1, min(30, v))
+                return max(1, min(30, int(cfg[INI_SECTION]["idle"])))
             except ValueError:
                 pass
         return 5
 
     def _save_idle_timeout(self, minutes: int) -> None:
+        self._persist_value("idle", str(minutes))
+
+    def _persist_scroll_position(self) -> None:
+        frac = self.out_pane.yview()[0]
+        self._persist_value(_SCROLL_KEY, f"{frac:.4f}")
+
+    def _restore_scroll_position(self) -> None:
         cfg = configparser.ConfigParser()
-        if os.path.exists(INI_PATH): cfg.read(INI_PATH)
-        if INI_SECTION not in cfg: cfg[INI_SECTION] = {}
-        cfg[INI_SECTION]["idle"] = str(minutes)
-        with open(INI_PATH, "w") as f: cfg.write(f)
+        if cfg.read(INI_PATH) and cfg.has_option(INI_SECTION, _SCROLL_KEY):
+            try:
+                frac = float(cfg[INI_SECTION][_SCROLL_KEY])
+                self.out_pane.yview_moveto(frac)
+            except ValueError:
+                pass
 
-    # ---------- helpers ----------
-    def _set_busy(self, busy: bool) -> None:
-        if busy:
-            self.send_btn.state(["disabled"])
-            self.spinner.pack(side="left", padx=10); self.spinner.start(10)
-        else:
-            self.spinner.stop(); self.spinner.pack_forget()
-            self.send_btn.state(["!disabled"])
+    def _persist_value(self, key: str, value: str) -> None:
+        cfg = configparser.ConfigParser()
+        if os.path.exists(INI_PATH):
+            cfg.read(INI_PATH)
+        if INI_SECTION not in cfg:
+            cfg[INI_SECTION] = {}
+        cfg[INI_SECTION][key] = value
+        with open(INI_PATH, "w") as f:
+            cfg.write(f)
 
-    # ---------- live-cost ----------
+    # ---------- live-cost (GUI-005) ----------
     def _cost_poller(self) -> None:
-        """Poll CurrentSpendEUR every 30 s; single pass in tests."""
         while True:
             try:
                 eur = self._fetch_cost_api()
                 if _IS_TESTING:
-                    self._set_cost(eur)        # immediate, no Tk event queue
+                    self._set_cost(eur)
                 else:
                     self.after(0, lambda e=eur: self._set_cost(e))
             except Exception:
@@ -89,15 +117,22 @@ class TinyLlamaGUI(tk.Tk):
 
     def _set_cost(self, eur: float) -> None:
         self.cost_var.set(f"€ {eur:,.2f} (today)")
-        if eur > 15:
-            color = "#d9534f"
-        elif eur > 10:
-            color = "#f0ad4e"
-        else:
-            color = "#212529"
-        self.cost_label.config(fg=color)
+        self.cost_label.config(
+            fg="#d9534f" if eur > 15 else "#f0ad4e" if eur > 10 else "#212529"
+        )
 
-    # ---------- handlers ----------
+    # ---------- helpers ----------
+    def _set_busy(self, busy: bool) -> None:
+        if busy:
+            self.send_btn.state(["disabled"])
+            self.spinner.pack(side="left", padx=10)
+            self.spinner.start(10)
+        else:
+            self.spinner.stop()
+            self.spinner.pack_forget()
+            self.send_btn.state(["!disabled"])
+
+    # ---------- event handlers ----------
     def _on_idle_change(self):
         try:
             v = int(self.idle_spin.get())
@@ -108,11 +143,14 @@ class TinyLlamaGUI(tk.Tk):
             pass
 
     def _on_send_event(self, event):
-        self._on_send(); return "break"
+        self._on_send()
+        return "break"
 
     def _on_send(self):
-        text = self.prompt_box.get("1.0", tk.END).rstrip("\n")
-        payload = json.dumps({"prompt": text, "idle": self.idle_minutes})
+        prompt = self.prompt_box.get("1.0", tk.END).rstrip("\n")
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._append_output(f"[{ts}] USER: {prompt}\n")
+        payload = json.dumps({"prompt": prompt, "idle": self.idle_minutes})
         self._set_busy(True)
         threading.Thread(target=self._send_to_api, args=(payload,), daemon=True).start()
 
@@ -122,17 +160,37 @@ class TinyLlamaGUI(tk.Tk):
 
     # ---------- backend stubs ----------
     def _send_to_api(self, payload: str):
-        time.sleep(2); print(payload)
-        self.after(0, lambda: self._set_busy(False))
+        time.sleep(1)  # simulate latency
+        response = f"Echo: {json.loads(payload)['prompt']}"
+        ts = datetime.now().strftime("%H:%M:%S")
+
+        if _IS_TESTING:
+            # Append directly so unit tests can see the text immediately
+            self._append_output(f"[{ts}] BOT : {response}\n")
+            self._set_busy(False)
+        else:
+            # Normal asynchronous GUI path
+            self.after(0, lambda txt=f"[{ts}] BOT : {response}\n": self._append_output(txt))
+            self.after(0, lambda: self._set_busy(False))
 
     def _stop_gpu_api(self):
         try:
-            r = requests.post("http://localhost:8000/stop", timeout=8); r.raise_for_status()
+            r = requests.post("http://localhost:8000/stop", timeout=8)
+            r.raise_for_status()
             self.after(0, lambda: messagebox.showinfo("GPU", "GPU stopped."))
         except Exception as exc:
-            self.after(0, lambda e=exc: messagebox.showerror("GPU", f"Stop failed: {e}"))
+            # bind exc into lambda to avoid NameError
+            self.after(0, lambda err=exc: messagebox.showerror("GPU", f"Stop failed: {err}"))
         finally:
             self.after(0, lambda: self.stop_btn.config(state="normal"))
+
+    # ---------- output pane helper ----------
+    def _append_output(self, text: str) -> None:
+        self.out_pane.config(state="normal")
+        self.out_pane.insert(tk.END, text)
+        self.out_pane.yview_moveto(1.0)
+        self.out_pane.config(state="disabled")
+        self._persist_scroll_position()
 
 if __name__ == "__main__":
     TinyLlamaGUI().mainloop()
