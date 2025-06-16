@@ -1,0 +1,38 @@
+@startuml
+title TinyLlama Desktop – Key Runtime Sequences
+
+actor User
+participant "TinyLlamaView"      as View
+participant "PromptController"   as PC
+participant "ThreadService"      as TS
+participant "CostController"     as CostController
+participant "Backend HTTP API"   as API
+participant "AppState"           as State
+
+== Scenario A: User sends prompt ==
+User -> View    : click **Send**
+View -> PC      : on_send(prompt)
+PC -> State     : add USER msg
+PC -> View      : set_busy(true)
+PC -> TS        : run_async(send_prompt)
+
+'--- async worker thread ---
+TS -> API       : POST /infer
+API --> TS      : JSON reply
+TS -> PC        : callback(reply)
+'--- back on UI thread ---
+PC -> State     : add BOT msg
+PC -> View      : append_output(reply)
+PC -> View      : set_busy(false)
+
+== Scenario B: Cost polling every 30 s ==
+group background
+    TS -> CostController    : 30-s tick
+    CostController -> TS    : run_async(fetch_cost)
+    TS -> API               : GET /cost
+    API --> TS              : € value
+    TS -> CostController    : callback(value)
+    CostController -> State : update cost
+    State -> View           : update_cost(value, colour)
+end group
+@enduml

@@ -1,0 +1,49 @@
+@startuml
+allowmixing
+title TinyLlama Desktop - Refactored Local Architecture (MVC + Services)
+
+actor User
+
+package "tinyllama.gui" {
+  class TinyLlamaView {
+    +update_cost(value, color)
+    +append_output(text)
+    +set_busy(flag)
+    +bind_buttons()
+  }
+
+  class AppState {
+    +idle_minutes
+    +auth_token
+    +current_cost
+    +history
+  }
+
+  component ThreadService
+}
+
+package "Controllers" {
+  class PromptController
+  class GPUController
+  class CostController
+  class AuthController
+}
+
+User --> TinyLlamaView : clicks buttons / types prompt
+
+TinyLlamaView --> PromptController : on_send(prompt)
+TinyLlamaView --> GPUController : on_stop_gpu()
+ThreadService --> CostController : every 30 s tick
+TinyLlamaView --> AuthController : on_login()
+
+PromptController --> ThreadService : run_async(send_prompt)
+CostController --> ThreadService : run_async(fetch_cost)
+
+PromptController --> AppState : write history
+CostController --> AppState : update current_cost
+AuthController --> AppState : set auth_token
+GPUController --> AppState : mark gpu_stopped
+
+AppState --> TinyLlamaView : via callbacks/events (update UI)
+
+@enduml

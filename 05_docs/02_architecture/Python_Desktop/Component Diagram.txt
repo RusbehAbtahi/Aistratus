@@ -1,0 +1,45 @@
+@startuml
+' TinyLlama Desktop – Component Diagram (MVC + Services)
+skinparam componentStyle rectangle
+allowmixing
+title TinyLlama Desktop – Component Diagram
+
+actor User
+
+package "tinyllama.gui" {
+    component "TinyLlamaView"    as View
+    component "ThreadService"    as ThreadSvc
+    component "AppState"         as State
+}
+
+package "Controllers" {
+    component "PromptController" as PromptCtrl
+    component "GPUController"    as GPUCtrl
+    component "CostController"   as CostCtrl
+    component "AuthController"   as AuthCtrl
+}
+
+User       --> View       : UI events
+
+View       --> PromptCtrl : on_send()
+View       --> GPUCtrl    : on_stop_gpu()
+View       --> AuthCtrl   : on_login()
+
+ThreadSvc  --> CostCtrl   : 30-s tick
+
+PromptCtrl --> ThreadSvc  : run_async()
+CostCtrl   --> ThreadSvc  : run_async()
+
+PromptCtrl --> State      : write history
+GPUCtrl    --> State      : mark gpu_stopped
+CostCtrl   --> State      : update cost
+AuthCtrl   --> State      : set auth_token
+
+State      --> View       : callbacks / observers
+
+database "HTTP API\n(/infer, /stop, /cost)" as API
+
+PromptCtrl --> API
+GPUCtrl    --> API
+CostCtrl   --> API
+@enduml
