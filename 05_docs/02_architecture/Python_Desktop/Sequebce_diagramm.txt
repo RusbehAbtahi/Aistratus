@@ -1,38 +1,61 @@
 @startuml
-title TinyLlama Desktop – Key Runtime Sequences
+title TinyLlama Desktop – Key Runtime Sequences (v2)
 
 actor User
 participant "TinyLlamaView"      as View
 participant "PromptController"   as PC
+participant "GPUController"      as GC
+participant "CostController"     as CC
+participant "AuthController"     as AC
 participant "ThreadService"      as TS
-participant "CostController"     as CostController
-participant "Backend HTTP API"   as API
 participant "AppState"           as State
+participant "Backend HTTP API"   as API
+participant "Cognito Login Page" as Browser
 
 == Scenario A: User sends prompt ==
-User -> View    : click **Send**
-View -> PC      : on_send(prompt)
-PC -> State     : add USER msg
-PC -> View      : set_busy(true)
-PC -> TS        : run_async(send_prompt)
+User -> View         : click **Send**
+View -> PC           : on_send(prompt)
+PC -> State          : add USER msg
+PC -> View           : set_busy(true)
+PC -> TS             : run_async(send_prompt)
 
-'--- async worker thread ---
-TS -> API       : POST /infer
-API --> TS      : JSON reply
-TS -> PC        : callback(reply)
-'--- back on UI thread ---
-PC -> State     : add BOT msg
-PC -> View      : append_output(reply)
-PC -> View      : set_busy(false)
+' --- async worker thread ---
+TS -> API            : POST /infer
+API --> TS           : {json reply}
+TS -> PC             : callback(reply)
+' --- back on UI thread ---
+PC -> State          : add BOT msg
+PC -> View           : append_output(reply)
+PC -> View           : set_busy(false)
 
-== Scenario B: Cost polling every 30 s ==
+== Scenario B: Cost polling (every 30 s) ==
 group background
-    TS -> CostController    : 30-s tick
-    CostController -> TS    : run_async(fetch_cost)
-    TS -> API               : GET /cost
-    API --> TS              : € value
-    TS -> CostController    : callback(value)
-    CostController -> State : update cost
-    State -> View           : update_cost(value, colour)
+    TS -> CC         : 30-s tick
+    CC -> TS         : run_async(fetch_cost)
+    TS -> API        : GET /cost
+    API --> TS       : € value
+    TS -> CC         : callback(value)
+    CC -> State      : set_cost(value)
+    State -> View    : update_cost(value, color)
 end group
+
+== Scenario C: User hits **Stop GPU** ==
+User -> View         : click **Stop GPU**
+View -> GC           : on_stop_gpu()
+GC -> View           : disable stop_btn
+GC -> TS             : run_async(post_stop)
+TS -> API            : POST /stop
+API --> TS           : 200/err
+TS -> GC             : callback(status)
+GC -> State          : add_history("GPU stopped")
+GC -> View           : enable stop_btn
+
+== Scenario D: User logs in ==
+User -> View         : click **Login**
+View -> AC           : on_login()
+AC -> Browser        : open login URL
+Browser --> AC       : auth_token (callback)
+AC -> State          : set_auth(token)
+State -> View        : indicate logged-in UI
+
 @enduml

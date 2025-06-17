@@ -1,0 +1,53 @@
+@startuml
+actor User
+
+participant TinyLlamaView as v
+participant PromptController as ctrl
+participant AppState as state
+participant ThreadService as svc
+participant ThreadServiceWorker as worker
+participant AwsTinyLlamaClient as client
+
+== User input ==
+User -> v: type "HaHa"
+v -> v: select "AWS TinyLlama"
+v -> ctrl: on_send("HaHa")
+activate ctrl
+
+ctrl -> v: set_busy(True)
+ctrl -> state: read idle_minutes, backend
+ctrl -> svc: run_async
+deactivate ctrl
+
+== Background worker ==
+svc -> worker: enqueue job
+activate worker
+
+worker -> worker: job = _job_q.get()
+worker -> ctrl: _call_backend
+activate ctrl
+
+ctrl -> client: send_prompt("HaHa", meta)
+activate client
+client --> ctrl: "[AWS-TinyLlama] echoed: HaHa..."
+deactivate client
+
+ctrl --> worker: result {"ok":True,...}
+deactivate ctrl
+
+worker -> svc: _result_q.put(...)
+deactivate worker
+
+== UI thread polling ==
+svc -> svc: _pump_results()
+activate svc
+
+svc -> ctrl: _on_backend_reply(result)
+activate ctrl
+
+ctrl -> v: set_busy(False)
+ctrl -> state: add_history(...)
+ctrl -> v: append_output(...)
+deactivate ctrl
+deactivate svc
+@enduml
