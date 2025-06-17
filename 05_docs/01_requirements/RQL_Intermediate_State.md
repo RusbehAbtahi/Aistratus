@@ -247,3 +247,32 @@
  *Sign-off*: When all boxes ticked, tag Git `release-mvp-v1.0` and freeze documentation.
 
  ---
+ ## 1️⃣2️⃣ Dual Backend Support — AWS TinyLlama & OpenAI (Permanent Feature)
+
+## Dual Backend Support (Permanent Feature)
+
+### GUI Behavior:
+- Add a dropdown menu to the main interface with two options:
+  - AWS TinyLlama API (default)
+  - OpenAI GPT API (permanent, equal status with AWS)
+- User can select backend at any time; the GUI uses the chosen backend for all prompt actions.
+
+### Technical Implementation:
+- Define a simple `BackendClient` interface (abstract class/protocol) in the controllers package.
+- Provide two backend implementations:
+    - `AwsTinyLlamaClient` for all AWS API interactions
+    - `OpenAiApiClient` for direct OpenAI API usage
+- Both classes must implement minimal core methods (e.g., `send_prompt`, `get_response`, `handle_errors`).
+- The controller(s) route requests to the current backend, depending on GUI selection.
+
+### Constraints and Scope:
+- Keep the implementation as minimal and modular as possible.
+- No backend-specific GUI features (the user experience remains the same for both).
+- All code for backend selection and switching must be cleanly separated and easy to extend.
+- All error handling and logging should distinguish backend origin clearly.
+
+### Acceptance Criteria:
+- GUI functions identically and stays responsive with either backend.
+- Switching between AWS and OpenAI is instant and seamless; no GUI freezing or instability.
+- Error and response handling work equally well for both backends.
+- The codebase remains clean, modular, and easy to extend for future orchestration (e.g., combining both via "RusbehGTP" meta-backend).
