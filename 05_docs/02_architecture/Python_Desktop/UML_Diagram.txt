@@ -1,0 +1,118 @@
+@startuml
+' TinyLlama Desktop – Detailed Implementation UML (MVC + Services)
+allowmixing
+title TinyLlama Desktop – Detailed Implementation UML (MVC + Services)
+
+actor User
+database "HTTP API\n(/infer /stop /cost)" as API
+
+package "tinyllama.gui" {
+  class TinyLlamaView {
+    - root: tk.Tk
+    - prompt_box: tk.Text
+    - send_btn: ttk.Button
+    - stop_btn: ttk.Button
+    - idle_spin: ttk.Spinbox
+    - cost_label: tk.Label
+    - spinner: ttk.Progressbar
+    + bind(controller_map)
+    + get_prompt(): str
+    + clear_prompt()
+    + update_cost(eur: float)
+    + append_output(text: str)
+    + set_busy(flag: bool)
+  }
+
+  class AppState {
+    + idle_minutes: int
+    + auth_token: str
+    + current_cost: float
+    + history: list<str>
+    - _subscribers: dict<str, list<Callable>>
+    + subscribe(event: str, cb: Callable)
+    + publish(event: str, data)
+    + set_idle(minutes: int)
+    + set_auth(token: str)
+    + set_cost(eur: float)
+    + add_history(line: str)
+  }
+
+  class ThreadService {
+    - _ui_thread: tk.Tk
+    + run_async(fn: Callable, *args)
+    + schedule(interval_s: int, fn: Callable, *args)
+  }
+}
+
+package "controllers" {
+  class PromptController {
+    - state: AppState
+    - service: ThreadService
+    - view: TinyLlamaView
+    + on_send(prompt: str)
+    - _post_infer(payload: dict)
+    - _handle_reply(text: str)
+  }
+
+  class GPUController {
+    - state: AppState
+    - service: ThreadService
+    + on_stop_gpu()
+    - _post_stop()
+  }
+
+  class CostController {
+    - state: AppState
+    - service: ThreadService
+    + start_polling()
+    - _fetch_cost()
+  }
+
+  class AuthController {
+    - state: AppState
+    + on_login()
+    - _open_browser_login()
+    - _handle_callback(token: str)
+  }
+}
+
+folder "Entry Point" {
+  class tinyllama_app <<(S,#FF7700)>> {
+    + main()
+  }
+}
+
+' UI flow
+User --> TinyLlamaView : click / type
+TinyLlamaView --> PromptController : on_send(prompt)
+TinyLlamaView --> GPUController    : on_stop_gpu()
+TinyLlamaView --> AuthController   : on_login()
+
+' Background polling
+ThreadService --> CostController : 30-s tick
+
+' Async calls
+PromptController --> ThreadService : run_async(_post_infer)
+CostController   --> ThreadService : run_async(_fetch_cost)
+GPUController    --> ThreadService : run_async(_post_stop)
+
+' HTTP API interactions
+PromptController --> API : POST /infer
+GPUController    --> API : POST /stop
+CostController   --> API : GET /cost
+
+' State updates
+PromptController --> AppState : add_history()
+GPUController    --> AppState : add_history()/mark
+CostController   --> AppState : set_cost()
+AuthController   --> AppState : set_auth()
+
+' UI refresh
+AppState --> TinyLlamaView : publish events
+
+' Object wiring
+tinyllama_app .down.> TinyLlamaView
+tinyllama_app .down.> AppState
+tinyllama_app .down.> ThreadService
+tinyllama_app .down.> controllers
+@enduml

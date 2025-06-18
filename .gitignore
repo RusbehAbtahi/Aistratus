@@ -108,3 +108,6 @@ dmypy.json
 # Custom
 00_infra/.env
 03_data/*
+venv_tinyllama/
+*.pyc
+__pycache__/
