@@ -1,0 +1,8 @@
+openapi: 3.1.0
+info:
+  title: TinyLlama Edge API
+  version: 0.0.0-draft
+  description: |
+    **Skeleton only.** Paths will be filled in API-002+
+paths: {}
+components: {}
