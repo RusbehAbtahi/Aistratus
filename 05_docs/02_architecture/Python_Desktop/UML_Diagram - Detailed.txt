@@ -1,0 +1,193 @@
+@startuml
+' TinyLlama Desktop – Full Implementation UML (MVC, Services, Multi-Backend, State)
+
+allowmixing
+title TinyLlama Desktop – Full Implementation UML (2025-06, Python 3.10)
+
+actor User
+database "HTTP API\n(/infer /stop /cost)" as API
+
+package "tinyllama.gui" {
+
+  class TinyLlamaView {
+    - root: tk.Tk
+    - prompt_box: tk.Text
+    - send_btn: ttk.Button
+    - login_btn: ttk.Button
+    - stop_btn: tk.Button
+    - idle_spin: ttk.Spinbox
+    - cost_var: tk.StringVar
+    - cost_label: tk.Label
+    - spinner: ttk.Progressbar
+    - backend_var: tk.StringVar
+    - backend_menu: ttk.Combobox
+    - auth_lamp: tk.Canvas
+    - _callbacks: dict
+    -- Output --
+    + bind(controller_map: dict)
+    + bind_state(state: AppState)
+    + get_prompt(): str
+    + clear_prompt(): void
+    + update_cost(eur: float): void
+    + append_output(text: str): void
+    + set_busy(flag: bool): void
+    + update_auth_lamp(status: str): void
+  }
+
+  class AppState {
+    + idle_minutes: int
+    + auth_token: str
+    + auth_status: str
+    + current_cost: float
+    + history: list<str>
+    + backend: str
+    - _lock: threading.Lock
+    - _subscribers: dict<str, list<Callable>>
+    -- Subscription/Setters --
+    + subscribe(event: str, cb: Callable)
+    + set_idle(minutes: int): void
+    + set_auth(token: str): void
+    + set_auth_status(status: str): void
+    + set_cost(eur: float): void
+    + add_history(line: str): void
+    + set_backend(name: str): void
+  }
+
+  class ThreadService {
+    - _ui_root
+    - _job_q: queue.Queue
+    - _result_q: queue.Queue
+    - _worker: threading.Thread
+    -- Async/Timer --
+    + run_async(fn: Callable, *args, ui_callback=None, **kwargs): void
+    + schedule(interval_s: int, fn: Callable, *args, **kwargs): str
+  }
+}
+
+package "controllers" {
+
+  class PromptController {
+    - _state: AppState
+    - _service: ThreadService
+    - _view: TinyLlamaView
+    -- Public --
+    + on_send(user_prompt: str): void
+    -- Private --
+    - _call_backend(client, prompt, meta): dict
+    - _on_backend_reply(result: dict): void
+  }
+
+  class GpuController {
+    - _state: AppState
+    - _service: ThreadService
+    - _view: TinyLlamaView
+    -- Public --
+    + on_stop_gpu(): void
+    -- Private --
+    - _simulate_stop(): void
+  }
+
+  class CostController {
+    - _state: AppState
+    - _service: ThreadService
+    - _view: TinyLlamaView
+    -- Public --
+    + start_polling(): void
+  }
+
+  class AuthController {
+    - _state: AppState
+    - _service: ThreadService
+    - _view: TinyLlamaView
+    -- Public --
+    + on_login(): void
+    + on_logout(): void
+    -- Private/Static --
+    - _login_worker(client): dict
+    - _on_login_done(result: dict): void
+  }
+}
+
+package "backend" {
+  interface BackendClient {
+    + send_prompt(prompt: str, metadata: dict): str
+  }
+
+  class AwsTinyLlamaClient {
+    + send_prompt(prompt: str, metadata: dict): str
+  }
+  class OpenAiApiClient {
+    + send_prompt(prompt: str, metadata: dict): tuple[str, float]
+  }
+  BackendClient <|.. AwsTinyLlamaClient
+  BackendClient <|.. OpenAiApiClient
+
+  interface AuthClient {
+    + login(): str
+    + logout(): void
+  }
+  class AwsCognitoAuthClient {
+    + login(): str
+    + logout(): void
+    - LOGIN_URL: str
+  }
+  class OpenAiDummyAuthClient {
+    + login(): str
+    + logout(): void
+  }
+  AuthClient <|.. AwsCognitoAuthClient
+  AuthClient <|.. OpenAiDummyAuthClient
+}
+
+folder "Entry Point" {
+  class tinyllama_app <<(S,#FF7700)>> {
+    + main(): void
+  }
+}
+
+' ==== UI Event Flow ====
+User --> TinyLlamaView : clicks/types
+TinyLlamaView --> PromptController : on_send(prompt)
+TinyLlamaView --> GpuController    : on_stop_gpu()
+TinyLlamaView --> AuthController   : on_login()
+TinyLlamaView --> AppState : via bind_state (auth_lamp/status update)
+
+' ==== Background Polling ====
+ThreadService --> CostController : start_polling (timer tick)
+
+' ==== Async Calls ====
+PromptController --> ThreadService : run_async(_call_backend)
+CostController   --> ThreadService : run_async(_fetch_cost)
+GpuController    --> ThreadService : (future) run_async(_post_stop)
+AuthController   --> ThreadService : run_async(_login_worker)
+
+' ==== Backend/Adapter Binding ====
+PromptController ..> BackendClient : uses
+PromptController ..> AwsTinyLlamaClient
+PromptController ..> OpenAiApiClient
+
+AuthController ..> AuthClient : uses
+AuthController ..> AwsCognitoAuthClient
+AuthController ..> OpenAiDummyAuthClient
+
+' ==== HTTP API interactions ====
+PromptController --> API : POST /infer
+GpuController    --> API : POST /stop
+CostController   --> API : GET /cost
+
+' ==== State Updates ====
+PromptController --> AppState : add_history(), set_cost()
+GpuController    --> AppState : add_history() (optional)
+CostController   --> AppState : set_cost()
+AuthController   --> AppState : set_auth(), set_auth_status()
+
+' ==== UI Refresh (Pub/Sub) ====
+AppState --> TinyLlamaView : via subscribe/publish (auth_lamp, cost_label, etc.)
+
+' ==== Object wiring (main) ====
+tinyllama_app .down.> TinyLlamaView
+tinyllama_app .down.> AppState
+tinyllama_app .down.> ThreadService
+tinyllama_app .down.> controllers
+
+@enduml

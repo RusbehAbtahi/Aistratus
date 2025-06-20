@@ -1,150 +1,129 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------
-# create_epic_api.sh — Epic 2  (Edge / API Gateway) + 4 rich stories
-#
-# Location: 04_scripts/gh/create_epic_api.sh
-# Usage:    bash 04_scripts/gh/create_epic_api.sh
-#
-# Prereqs  : gh auth login ✔  |  labels & milestone from GUI script exist
+# create_epic_api.sh — Creates Epic 2 API stories, labels, milestone
+# Prereqs: gh auth login ✔, repo cloned, run from repo root
+# Usage:   bash 04_scripts/gh/create_epic_api.sh
 # ------------------------------------------------------------------
 set -euo pipefail
-MILESTONE="Intermediate Stage"
 
-# ---------- 0. Ensure labels -------------------------------------------------
-gh label create api   --description "API-layer work"             --color 8E44AD 2>/dev/null || true
+# ---------- 0.  Labels ------------------------------------------------
+echo "==> Ensuring labels"
 gh label create epic  --description "Parent issue that groups user stories" --color BFD4F2 2>/dev/null || true
-gh label create story --description "Individual user story"      --color 7057FF 2>/dev/null || true
+gh label create api   --description "Edge API work"                        --color E99695 2>/dev/null || true
+gh label create story --description "Individual user story"                --color 7057FF 2>/dev/null || true
 
-# ---------- 1. Epic body ------------------------------------------------------
+# ---------- 1.  Milestone ---------------------------------------------
+echo "==> Ensuring milestone"
+REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
+gh api "repos/$REPO/milestones" \
+  -f title="Intermediate Stage" \
+  -f state="open" \
+  -F description="All intermediate-stage work (GUI + on-demand GPU inference)" \
+  > /dev/null 2>&1 || true
+
+# ---------- 2.  Epic ---------------------------------------------------
+echo "==> Creating Epic 2 – Secure Edge API Gateway"
 cat > /tmp/epic_api.md <<'EOF'
 **Epic Goal**
 
-Stand up a secure, well-documented HTTP API layer that exposes three routes—`/infer`, `/stop`, and `/ping`—behind Amazon API Gateway (HTTP API).  
-All requests must carry a valid JWT issued by Cognito; throttling protects back-end resources; structured access-logs land in CloudWatch.
+Expose a single, authenticated HTTP API surface (`/infer`, `/stop`, `/ping`) that blocks bad traffic, enforces cost-safe throttling, and produces audit-grade logs.
 
-**Why this matters**
+**Why it matters**
 
-The API is the *contract* between every current and future client (desktop, CLI, mobile app) and the cloud back-end.  
-A rock-solid API surface gives front-end developers a stable target, lets DevOps set cost-control guardrails early, and surfaces abuse patterns in logs before they hurt our budget.
+API Gateway is the security and observability gate for all user and internal access.
 
-**Success / Acceptance**
+**Acceptance**
 
-1. A developer can run `curl -H "Authorization: Bearer <valid>" https://…/ping` and get `{"status":"ok"}`.  
-2. Invalid or missing JWT returns `401 Unauthorized` in < 150 ms.  
-3. Per-user throttle: 5 req/s bursts, 20 req/min sustained.  
-4. CORS permits `http://localhost:*` for the desktop GUI.  
-5. Access-logs in `/apigw/tl-fif` CloudWatch group include trace-id, caller-ip, latency, and HTTP status.  
+– Stories API-001…API-005 all *Done*  
+– OpenAPI contract, end-to-end security tests, and cost metrics signed off
 EOF
 
-# ---------- 2. Create epic and grab issue number -----------------------------
 EPIC_URL=$(gh issue create \
-  --title "Epic 2 – API Gateway layer" \
+  --title "Epic 2 – Secure Edge API Gateway" \
   --label epic,api \
   --body-file /tmp/epic_api.md \
-  --milestone "$MILESTONE" | tail -n1)
+  --milestone "Intermediate Stage" | tail -n1)
 EPIC_ID=${EPIC_URL##*/}
-echo "✅  Epic #${EPIC_ID} created"
+echo "Epic #$EPIC_ID created"
 
-# ---------- 3. Helper to create richly-worded stories ------------------------
+# ---------- 3.  Helper to spawn stories --------------------------------
 create_story () {
-  local code="$1"; shift
-  local title="$1"; shift
+  local id="$1" ; shift
+  local title="$1" ; shift
   local body="$1"
-  echo "$body" > /tmp/story.md
+  printf '%s\n' "$body" > /tmp/body.md
   gh issue create \
-    --title "${code}  ${title}" \
+    --title "$id  $title" \
     --label api,story \
-    --body-file /tmp/story.md \
-    --milestone "$MILESTONE" \
+    --body-file /tmp/body.md \
+    --milestone "Intermediate Stage" \
     > /dev/null
-  echo "   • ${code} created"
+  echo "  • $id created"
 }
 
-# ---------- 4. Story 1 – Route skeleton --------------------------------------
-create_story "API-001" "Define & document HTTP routes" "
-Belongs to **Epic #${EPIC_ID}**
+# ---------- 4.  API stories --------------------------------------------
 
-**User Story**
+echo "==> Creating API stories"
 
-*As a front-end integrator*  
-I need a published OpenAPI 3 spec that declares `/infer`, `/stop`, and `/ping`
-so I can generate type-safe client code and avoid guesswork.
+create_story "API-001" "API Skeleton & Test Harness" \
+"Belongs to **Epic #$EPIC_ID**
 
-**Why it matters**
+Context: Set up repo folders, pytest infrastructure, and a failing integration test to enforce TDD.
 
-Spelling mistakes in endpoints or payloads cascade into wasted debugging time.
-An authoritative spec enforces a single source of truth and accelerates future client work.
+**Acceptance Criteria:**
+- Create package structure: \`api/\` with empty \`routes.py\`, \`tests/\` with pytest scaffold.
+- GitHub Action runs \`pytest\` and fails on placeholder test.
+- Include minimal \`openapi.yaml\` with empty path definitions.
+- README documents local \`uvicorn\` mock run.
+- Assign ownership via GitHub \`CODEOWNERS\` file (API PRs routed to back-end team)."
 
-**Acceptance Criteria**
+create_story "API-002" "JWT Authorizer via Cognito" \
+"Belongs to **Epic #$EPIC_ID**
 
-1. `api/openapi.yaml` in Git is valid OpenAPI 3.1.  
-2. Describes request/response JSON schemas with example payloads.  
-3. GitHub Action runs `openapi-cli lint` and fails on spec errors.  
-4. A generated HTML reference is available at  
-   `https://RusbehAbtahi.github.io/Aistratus/api-spec/`."
+Context: All edge calls must prove identity without warming downstream services.
 
-# ---------- 5. Story 2 – JWT authorizer --------------------------------------
-create_story "API-002" "JWT authorizer via Cognito" "
-Belongs to **Epic #${EPIC_ID}**
+**Acceptance Criteria:**
+- Requests lacking valid \`Authorization\` header return **401 within 150 ms**.
+- Expired/invalid JWTs return **403**; valid tokens forward claims.
+- API Gateway caches JWKs ≤ 10 min.
+- Postman tests show happy path + three negative cases.
+- Contract test in CI hits a mocked JWKS endpoint.
+- Clearly document the Cognito setup process explicitly in README (\`api/README.md\`) to avoid configuration confusion later."
 
-**User Story**
+create_story "API-003" "Per-User Throttling & CORS Enforcement" \
+"Belongs to **Epic #$EPIC_ID**
 
-*As a security-conscious architect*  
-I want API Gateway to validate JWTs issued by our Cognito User Pool  
-so that only authenticated users can invoke costly back-end resources.
+Context: Prevent runaway GUI loops and hostile scripts.
 
-**Why it matters**
+**Acceptance Criteria:**
+- Burst limit **5 req/s**, sustained **20 req/min** per Cognito \`sub\`.
+- Exceeding limits returns **429** with proper \`Retry-After\` header.
+- CORS allows \`http://localhost:*\`; all other origins blocked.
+- Smoke test sends 6 rapid calls; last must return 429.
+- Emit metric \`RateLimitBreaches\` to CloudWatch."
 
-Without upfront JWT validation, malicious actors could spin up EC2
-and burn budget. Shifting auth left into API Gateway blocks abuse
-before Lambda or EC2 incur cost.
+create_story "API-004" "Structured JSON Access Logging" \
+"Belongs to **Epic #$EPIC_ID**
 
-**Acceptance Criteria**
+Context: Enable rapid troubleshooting through structured, machine-parseable logs.
 
-1. Cognito user-pool authorizer configured with 60-min token TTL.  
-2. Requests without `Authorization: Bearer …` header → **401**.  
-3. Requests with expired or tampered token → **403**.  
-4. Happy path adds `sub`, `email`, and `iat` claims as headers to Lambda.  
-5. Postman collection demonstrates success & failure cases."
+**Acceptance Criteria:**
+- JSON log format: \`requestId\`, \`ip\`, \`route\`, \`status\`, \`latencyMs\`.
+- Logs stored in CloudWatch group \`/apigw/tl-fif\` with 30-day retention.
+- CloudWatch Insights query saved as \`queries/api_latency.cwi\`.
+- CI asserts log fields via AWS SDK stub.
+- p95 latency alarm (≥300 ms 5 min) created and enabled."
 
-# ---------- 6. Story 3 – Throttle & CORS -------------------------------------
-create_story "API-003" "Per-user throttling & CORS rules" "
-Belongs to **Epic #${EPIC_ID}**
+create_story "API-005" "Health Check Route (/ping)" \
+"Belongs to **Epic #$EPIC_ID**
 
-**User Story**
+Context: Lightweight endpoint for automated uptime checks.
 
-*As an ops engineer*  
-I need sensible default throttling and CORS in place  
-so that accidental GUI loops or rogue scripts cannot flood the system.
+**Acceptance Criteria:**
+- \`GET /ping\` returns \`{\"status\":\"ok\"}\` within 100 ms.
+- Route is JWT-exempt, requires VPC-only source CIDR 10.20.0.0/22.
+- Terraform outputs URL for external health-checkers (e.g., Pingdom).
+- Synthetic test in CloudWatch Synthetics checks every minute.
+- Failure 3/5 iterations triggers PagerDuty alert."
 
-**Why it matters**
-
-Redis queue and Lambda are cheap, but unconstrained floods can still
-cause CPU spikes, noisy logs, and cascading latency.
-
-**Acceptance Criteria**
-
-1. Default burst: **5 req/s**; rate: **20 req/min** per token.  
-2. Returned header `X-RateLimit-Limit` communicates limits.  
-3. CORS allows `http://localhost:*` (desktop) and blocks other origins.  
-4. Unit test simulates 6 rapid calls → 429 response on 6th."
-
-# ---------- 7. Story 4 – Structured access-logs ------------------------------
-create_story "API-004" "Structured JSON access-logs to CloudWatch" "
-Belongs to **Epic #${EPIC_ID}**
-
-**User Story**
-
-*As a DevOps lead*  
-I want every API call logged in JSON with trace-id, caller IP,
-HTTP status, and latency so that I can debug incidents
-and feed usage data into cost dashboards.
-
-**Acceptance Criteria**
-
-1. Logs land in group `/apigw/tl-fif` with retention 30 days.  
-2. Each entry has keys: `requestId`, `ip`, `route`, `status`, `latencyMs`.  
-3. Sample log verified via CloudWatch console and `aws logs tail`.  
-4. CloudWatch Insights query file `queries/api_latency.cwi` committed."
-
-echo "🎉  Epic 2 and its 4 detailed stories created"
+echo "==> API epic and five stories DONE"

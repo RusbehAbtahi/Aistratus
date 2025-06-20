@@ -1,0 +1,87 @@
+@startuml
+!theme spacelab
+title TinyLlama Architecture – Intermediate Phase (2025-06)
+
+actor User
+
+package "Desktop" {
+  [Desktop GUI] as GUI
+}
+
+package "Edge/API [EPIC: API]" {
+  [CloudFront (optional)] as CF
+  [Cognito JWT] as Cognito
+  [API Gateway\nHTTP API] as APIGW
+}
+
+package "Router & Queue" {
+  [Lambda Router v2\n(EPIC: Lambda)] as Lambda
+  [ElastiCache Redis\n(5m TTL, SM)] as Redis
+}
+
+package "CI/CD & Ops" {
+  [CodePipeline] as Pipeline
+  [CodeBuild\n(unit tests ≥90%)] as CB
+  [ImageBuilder\n(Build AMI)] as IB
+  [Secrets Manager] as Secrets
+  [AWS Budgets\n€15 warn / €20 stop] as Budgets
+  [CloudWatch\n(metrics, alarms)] as CW
+  [SSM RunCommand] as SSM
+}
+
+package "GPU Node & Storage" {
+  [EC2 g4dn.xlarge\n(vLLM, AMI)] as EC2
+  [100 GB gp3 cache] as EBS
+  [NAT Gateway] as NAT
+  [S3 tinyllama-models] as S3
+  [KMS-CMK\n(EBS/S3 encrypt)] as KMS
+  [VPC Private] as VPC
+}
+
+'==== Data/Control Flow ====
+User --> GUI : Prompt/Action
+
+GUI --> CF : HTTPS
+CF --> APIGW : HTTPS (w/ JWT)
+GUI ..> Cognito : OAuth flow
+
+APIGW --> Lambda : Authorizer + API call
+Lambda --> Redis : Enqueue job
+Lambda --> APIGW : Response
+APIGW --> GUI : Response
+
+' Lambda wakes EC2 if needed
+Lambda --> EC2 : Dequeue/Wake
+
+EC2 --> Redis : Dequeue job
+EC2 --> S3 : Upload inference result
+EC2 --> CW : Metrics
+
+' Cost/Compliance Flows
+Budgets --> CB : Alarm (via Lambda)
+Budgets --> GUI : Alarm to desktop
+CW --> GUI : Cost metrics (polling)
+CW --> CB : Log builds/tests
+Secrets --> CB : OpenAI key
+
+' CI/CD Flows
+Pipeline --> CB : Trigger build
+CB --> IB : Build AMI
+IB --> EC2 : Deploy AMI
+CB --> Lambda : Deploy Lambda
+
+' Storage/Encryption Flows
+EC2 --> EBS : Data (boot/cache)
+EC2 --> NAT : HTTPS egress
+S3 --> EC2 : Model download
+KMS --> S3 : Encrypt
+KMS --> EBS : Encrypt
+
+' SSM/Admin flows
+SSM --> EC2 : RunCommand
+CW --> Budgets : Compliance check
+
+' Network boundaries
+EC2 ..> VPC : Private subnet
+
+@enduml
