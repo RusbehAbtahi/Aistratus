@@ -3,8 +3,10 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     region: str = "eu-central-1"
-    user_pool_id: str
-    client_id: str
+    user_pool_id: str = "dummy"
+    client_id: str = "dummy"
+    class Config:
+        extra = "ignore"
 
     @property
     def issuer(self) -> str:
