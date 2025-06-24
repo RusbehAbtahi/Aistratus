@@ -18,6 +18,8 @@ jobs:
     env:
       COGNITO_APP_CLIENT_ID: ${{ secrets.COGNITO_APP_CLIENT_ID }}
       API_BASE_URL:        ${{ secrets.API_BASE_URL }}
+      user_pool_id: dummy_test_user_pool_id
+      client_id: dummy_test_client_id
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
