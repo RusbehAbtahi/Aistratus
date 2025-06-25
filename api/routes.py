@@ -1,11 +1,5 @@
-"""
-api.routes
-==========
-
-Empty FastAPI app placeholder.  Real routes land in API-002+.
-"""
-
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
+from .security import verify_jwt
 
 app = FastAPI(
     title="TinyLlama Edge API",
@@ -14,7 +8,10 @@ app = FastAPI(
     docs_url="/docs", redoc_url="/redoc",
 )
 
-# keep file non-empty or FastAPI will raise at start-up
-@app.get("/__placeholder__", include_in_schema=False)
-async def _placeholder():
-    return {"status": "placeholder"}
+@app.get("/ping")
+async def ping():
+    return {"status": "ok"}
+
+@app.post("/infer")
+def infer_stub(dep=Depends(verify_jwt)):
+    return {"status": "ok"}

@@ -3,6 +3,21 @@ info:
   title: TinyLlama Edge API
   version: 0.0.0-draft
   description: |
-    **Skeleton only.** Paths will be filled in API-002+
-paths: {}
-components: {}
+    API-002: JWT-protected inference endpoint via Cognito.
+
+components:
+  securitySchemes:
+    CognitoJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+paths:
+  /infer:
+    post:
+      security:
+        - CognitoJwt: []
+      description: JWT-protected inference endpoint (stub)
+      responses:
+        '200':
+          description: OK
