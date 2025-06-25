@@ -16,34 +16,28 @@ jobs:
   test-and-postman:
     runs-on: ubuntu-latest
     env:
+      # real secrets (set once in repo → Settings → Actions → Secrets)
+      COGNITO_USER_POOL_ID:  ${{ secrets.COGNITO_USER_POOL_ID }}
       COGNITO_APP_CLIENT_ID: ${{ secrets.COGNITO_APP_CLIENT_ID }}
-      API_BASE_URL:        ${{ secrets.API_BASE_URL }}
-      user_pool_id: dummy_test_user_pool_id
-      client_id: dummy_test_client_id
+      API_BASE_URL:          ${{ secrets.API_BASE_URL }}
+      # local test helpers
+      LOCAL_JWKS_PATH: ${{ github.workspace }}/02_tests/api/data/mock_jwks.json
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
 
-      - name: Install Python Dependencies
+      - name: Install Python Deps
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Set PYTHONPATH
-        run: echo "PYTHONPATH=$PWD" >> $GITHUB_ENV
 
       - name: Run Pytest
         run: pytest -q
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: "18"
+      - uses: actions/setup-node@v3
+        with: { node-version: "18" }
 
       - name: Install Newman
         run: npm install -g newman
@@ -53,4 +47,5 @@ jobs:
           newman run 02_tests/api/postman/API-002.postman_collection.json \
             -e 02_tests/api/postman/tinyllama.postman_env.json \
             --env-var "baseUrl=${{ env.API_BASE_URL }}" \
+            --env-var "validJwt=${{ secrets.POSTMAN_VALID_JWT }}" \
             --bail
