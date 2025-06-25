@@ -8,11 +8,10 @@ app = FastAPI(
     docs_url="/docs", redoc_url="/redoc",
 )
 
+@app.get("/ping")
+async def ping():
+    return {"status": "ok"}
+
 @app.post("/infer")
 def infer_stub(dep=Depends(verify_jwt)):
     return {"status": "ok"}
-
-# (optional: keep the placeholder endpoint for old tests)
-@app.get("/__placeholder__", include_in_schema=False)
-async def _placeholder():
-    return {"status": "placeholder"}
