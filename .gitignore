@@ -112,3 +112,4 @@ dmypy.json
 venv_tinyllama/
 *.pyc
 __pycache__/
+.env.dev
