@@ -1,156 +1,168 @@
-#!/usr/bin/env bash
-# ------------------------------------------------------------------
-# create_epic_lambda.sh — Creates Epic 3 (Lambda Router v2) tickets
-# Requires: gh auth login ✔, run from repo root
-# Usage:    bash 04_scripts/gh/create_epic_lambda.sh
-# ------------------------------------------------------------------
-set -euo pipefail
+#!/bin/bash
 
-# ---------- 0. Labels ------------------------------------------------
-echo "==> Ensuring labels"
-gh label create epic     --description "Parent issue that groups user stories" --color BFD4F2 2>/dev/null || true
-gh label create lambda   --description "Serverless router work"                --color BFDADC 2>/dev/null || true
-gh label create story    --description "Individual user story"                --color 7057FF 2>/dev/null || true
+# LAM-001 – Enable Router & Real JWT / Body Validation
+gh issue create -t "LAM-001 · Enable Router & Real JWT / Body Validation" -l "lambda,story" -b "Parent: #57
 
-# ---------- 1. Milestone ---------------------------------------------
-echo "==> Ensuring milestone"
-REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
-gh api "repos/$REPO/milestones" \
-  -f title="Intermediate Stage" \
-  -f state="open" \
-  -F description="All intermediate-stage work (GUI + on-demand GPU inference)" \
-  >/dev/null 2>&1 || true
+### Context
 
-# ---------- 2. Epic ---------------------------------------------------
-echo "==> Creating Epic 3 – Lambda Router v2"
-cat > /tmp/epic_lam.md <<'EOF'
-**Epic Goal**
+\`tinyllama-router\` is currently disabled in prod via \`TL_DISABLE_LAM_ROUTER=\"1\"\`. We must flip that flag, hard-wire JWT verification identical to API-003, and validate the JSON body (\`prompt\`, \`idle\`) before spending Redis/EC2 cost. Prior audits flagged missing rollback steps and unclear CI packaging.
 
-Build a **stateless, 512 MB, Python 3.12 Lambda Router** that:
-1. Accepts authenticated requests from API Gateway (`/infer`, `/stop`).
-2. Validates JWT + payload, enqueues jobs into Redis, and cold-boots GPU as needed.
-3. Responds in ≤ 60 ms warm, emitting `X-Request-Id` and trace headers.
+### Acceptance Criteria
 
-**Why it matters**
+1. **Activation**
+   - Terraform sets \`environment { variables = { TL_DISABLE_LAM_ROUTER = \"0\" } }\`.
+   - \`terraform apply\` publishes new version, shifts alias **prod**; previous 5 versions retained (automated via Lambda alias/versions).
+2. **JWT Verification**
+   - Uses shared lib \`tinyllama.utils.auth.verify_jwt(token, issuer, aud)\` (import path matches \`jwt_tools.py\`).
+   - Invalid JWT → **401**, body \`{\"error\":\"invalid_token\"}\`; latency ≤ 100 ms (cold ≤ 350 ms).
+3. **Schema Validation**
+   - Request JSON must match:
+     \`\`\`json
+     { \"prompt\": \"<string 1-6 kB>\", \"idle\": <int 1-30> }
+     \`\`\`
+   - Exceeding limits → **400** with field-specific error.
+   - Validation performed via \`pydantic\` model; code coverage ≥ 95% on model/handler.
+4. **Rollback**
+   - \`make lambda-rollback VERSION=\$PREV\` script documented; RUNBOOK section added to \`docs/ops/lambda_router.md\`.
+   - GitHub Action \`router_canary.yml\` hits \`/ping\` every 5 min; two failures trigger auto-rollback via \`aws lambda update-alias --function-name tinyllama-router --name prod --function-version \$PREV\`.
+5. **Tests** (CI job \`lam_router_spec\`)
+   - Unit tests: happy path, >6 kB prompt, idle=0, tampered JWT.
+   - Contract test runs \`sam local invoke\` with Docker to ensure env var wired.
+   - p95 duration in X-Ray segment must be < 60 ms warm.
 
-The router is the orchestration brain that converts authenticated user prompts into cost-safe GPU workloads, enforcing security, rate-limit, and observability boundaries.
+### Technical Notes / Steps
 
-**Acceptance**
+- **Terraform** (\`infra/lambda/router.tf\`)
+  \`\`\`hcl
+  resource \"aws_lambda_function\" \"router\" {
+    filename         = data.archive_file.router_zip.output_path
+    handler          = \"tinyllama.router.handler.lambda_handler\"
+    runtime          = \"python3.12\"
+    memory_size      = 512
+    timeout          = 30
+    environment {
+      variables = {
+        TL_DISABLE_LAM_ROUTER = \"0\"
+        COGNITO_ISSUER        = var.cognito_issuer
+        COGNITO_AUD           = var.cognito_app_client_id
+      }
+    }
+    layers = [aws_lambda_layer_version.shared_deps.arn]
+    tracing_config { mode = \"Active\" }
+  }
+  \`\`\`
+- **Python skeleton** (\`01_src/tinyllama/router/handler.py\`)
+  \`\`\`python
+  from tinyllama.utils.auth import verify_jwt
+  from tinyllama.utils.schema import PromptReq
 
-* Tickets **LAM-001 … LAM-005** are all ✔ *Done* with clarified criteria (see individual issues).
-* GUI → API → Lambda smoke test passes: valid login, prompt, 202 queue, `X-Request-Id` trace.
-* p95 warm latency ≤ 60 ms (X-Ray), p50 cold-start ≤ 2.0 s (reported in CloudWatch).
-EOF
+  def lambda_handler(evt, ctx):
+      hdr = evt[\"headers\"].get(\"authorization\",\"\")
+      token = hdr.removeprefix(\"Bearer \")
+      verify_jwt(token, os.environ[\"COGNITO_ISSUER\"],
+                 os.environ[\"COGNITO_AUD\"])
+      body = PromptReq.model_validate_json(evt[\"body\"])
+      # enqueue logic in next ticket …
+      return {\"statusCode\":202,\"body\":'{\"status\":\"queued\"}'}
+  \`\`\`
+- **Cost impact**: +€0.10/mo (extra Lambda invocations, X-Ray traces).
+"
 
-EPIC_URL=$(gh issue create \
-  --title "Epic 3 – Lambda Router v2" \
-  --label epic,lambda \
-  --body-file /tmp/epic_lam.md \
-  --milestone "Intermediate Stage" | tail -n1)
-EPIC_ID=${EPIC_URL##*/}
-echo "Epic #$EPIC_ID created"
+# LAM-002 – Redis Enqueue with 5-Minute TTL
+gh issue create -t "LAM-002 · Redis Enqueue with 5-Minute TTL" -l "lambda,story" -b "Parent: #57
 
-# ---------- 3. Helper -------------------------------------------------
-create_story () {
-  local id="$1"; shift
-  local title="$1"; shift
-  local body="$1"
-  printf '%s\n' "$body" > /tmp/body.md
-  gh issue create \
-    --title "$id  $title" \
-    --label lambda,story \
-    --body-file /tmp/body.md \
-    --milestone "Intermediate Stage" \
-    >/dev/null
-  echo "  • $id created"
-}
+### Context
 
-# ---------- 4. Stories ------------------------------------------------
-echo "==> Creating Lambda stories"
+Router must place validated jobs into Redis (see RED-001) using a strict schema and auto-expire orphaned entries after 300 seconds. Prior audit demanded error fallback and SG verification.
 
-create_story "LAM-001" "Router Skeleton & Pytest Harness" \
-"Belongs to **Epic #$EPIC_ID**
+### Acceptance Criteria
 
-Context: Lay initial structure and a deliberately failing test (TDD).
+1. **Enqueue Logic**
+   - Key pattern: \`job:{uuid}\`.
+   - Value JSON contains \`prompt\`, \`idle\`, \`reply_s3\`, \`ts\`.
+   - \`EX 300\` set atomically (\`SET key val EX 300 NX\`).
+2. **Happy Path**
+   - Returns **202** \`{\"status\":\"queued\",\"id\":\"<uuid>\"}\` ≤ 60 ms warm.
+3. **Failure Handling**
+   - Redis timeout or auth failure → **503** \`{\"error\":\"queue_unavailable\"}\`; CloudWatch metric \`RedisEnqueueFail\`+1.
+   - No retry inside Lambda (caller decides).
+4. **Security**
+   - Lambda SG allows egress to Redis SG 6379 only; verified in terratest (\`tests/sg_ingress_test.go\`).
+5. **Tests**
+   - Unit test with \`fakeredis\` asserts TTL between 295–305 s.
+   - Integration test in CI uses real ElastiCache endpoint in dev account (tag-scoped IAM).
 
-**Acceptance Criteria**
-- [ ] Scaffold \`router/handler.py\`, \`tests/router_test.py\` (pytest-asyncio).
-- [ ] Add **\`.env.dev\` template** (DATA_BUCKET, COGNITO_APP_CLIENT_ID, LOCAL_JWKS_PATH).
-- [ ] Promote/re-export \`make_token\` helper from API package for reuse.
-- [ ] \`make lambda-package\` target in **Makefile** builds ZIP (CI uses it).
-- [ ] \`sam local invoke\` documented to pick up \`.env.dev\`.
-- [ ] CI must fail on placeholder test until LAM-002 passes.
+### Technical Notes
 
-<details><summary>Definition of Ready / Done</summary>
+- **Python** enqueue snippet (add to handler):
+  \`\`\`python
+  import redis, uuid, json, os, boto3, time
+  r = redis.Redis(host=os.environ[\"REDIS_HOST\"], port=6379,
+                  socket_timeout=0.05)
+  jid = str(uuid.uuid4())
+  job = {\"prompt\": body.prompt,
+         \"idle\": body.idle,
+         \"reply_s3\": f\"s3://{os.environ['REPLY_BUCKET']}/{jid}.json\",
+         \"ts\": int(time.time()*1000)}
+  if not r.set(f\"job:{jid}\", json.dumps(job), ex=300, nx=True):
+      raise RuntimeError(\"Job collision\")
+  return {\"statusCode\":202,\"body\":json.dumps({\"status\":\"queued\",\"id\":jid})}
+  \`\`\`
+- **Alarm**: CloudWatch alarm \`RedisEnqueueFail >=3 in 5m\` → SNS \`#tinyllama-alerts\`.
+- **Cost**: Redis additional commands negligible; CloudWatch metrics ≈ €0.02/mo.
+"
 
-- **Ready**: labels set, ADR (if any) merged, failing test reproduced locally.  
-- **Done**: main branch green, VERSION bumped, ADR updated if structure changed.
-</details>"
+# LAM-003 – GPU Cold-Boot Logic
+gh issue create -t "LAM-003 · GPU Cold-Boot Logic" -l "lambda,story" -b "Parent: #57
 
-create_story "LAM-002" "JWT & Input Schema Validation" \
-"Belongs to **Epic #$EPIC_ID**
+### Context
 
-Context: Reject bad input _before_ incurring Redis or EC2 cost.
+If the GPU EC2 instance (see EC2-001) is **stopped**, Router must start it and immediately inform GUI of a ~90 s ETA. Audit noted missing metric and unclear client-poll strategy.
 
-**Acceptance Criteria**
-- [ ] Re-use **\`verify_jwt\`** util from API; share code, avoid divergence.
-- [ ] Implement **lazy JWKS reload** to prevent \"unknown kid\" races.
-- [ ] Validate body: \`prompt ≤ 6 kB\`, optional \`idle ≤ 30\`.
-- [ ] Error map: missing/invalid JWT → 401, bad schema → 400, unknown kid / expired / aud-mismatch → 403.
-- [ ] Unit tests cover: valid, expired, tampered, wrong aud, unknown kid (5 cases).
-- [ ] Coverage ≥ 90 % on router package.
+### Acceptance Criteria
 
-**Warnings / Lessons from API-002**
-- Insert \`COGNITO_APP_CLIENT_ID\` via env **everywhere** (pytest, SAM, CI) or tests will silently pass with dummy aud.  
-- Make sure JWKS cache refreshes between tests; seed \`LOCAL_JWKS_PATH\` from \`02_tests/api/data/mock_jwks.json\`.
+1. **Start Decision**
+   - Router queries EC2 by tag \`Project=tinyllama\` && \`Role=gpu-node\`.
+   - If state \`stopped|stopping|terminated\` → call \`start_instances\`.
+   - If state \`pending|running\` → skip start.
+2. **Immediate Response**
+   - When a cold start is triggered, Router returns **202** \`{\"status\":\"starting\",\"eta\":90}\` and header \`X-GPU-ColdBoot:true\`.
+   - GUI must poll \`/ping\` until 200.
+3. **Metrics**
+   - \`EC2Starts\` (Dim:Reason=ColdBoot) \`PutMetricData\` on every start.
+   - p95 start_instances API latency ≤ 400 ms.
+4. **Idempotency**
+   - Second request during \`pending\` state must *not* call start again; still returns \`starting\`.
+5. **Tests**
+   - Unit test with \`botocore.stub.Stubber\` asserts tag filter & idempotency.
+   - CI integration test starts a t3.micro in dev to avoid GPU billing; checks metric emission.
+6. **Rollback Safety**
+   - If Lambda fails to start instances (limit, insufficient capacity), returns **503** with error details; GUI shows toast.
 
-<details><summary>Definition of Ready / Done</summary></details>"
+### Technical Notes
 
-create_story "LAM-003" "Redis Enqueue with 5-Minute TTL" \
-"Belongs to **Epic #$EPIC_ID**
+- **Python** excerpt:
+  \`\`\`python
+  ec2 = boto3.client(\"ec2\")
+  res = ec2.describe_instances(Filters=[
+      {\"Name\":\"tag:Project\",\"Values\":[\"tinyllama\"]},
+      {\"Name\":\"tag:Role\",\"Values\":[\"gpu-node\"]}
+  ])
+  iid = res[\"Reservations\"][0][\"Instances\"][0][\"InstanceId\"]
+  state = res[\"Reservations\"][0][\"Instances\"][0][\"State\"][\"Name\"]
+  if state == \"stopped\":
+      ec2.start_instances(InstanceIds=[iid])
+      cw.put_metric_data(
+          Namespace=\"TLFIF\",
+          MetricData=[{\"MetricName\":\"EC2Starts\",\"Value\":1,
+                       \"Unit\":\"Count\",\"Dimensions\":[
+                           {\"Name\":\"Reason\",\"Value\":\"ColdBoot\"}]}])
+      return _starting_response()
+  elif state in (\"pending\",\"running\"):
+      return _starting_response() if state==\"pending\" else _normal_flow()
+  else:
+      return _error(\"instance_unavailable\")
+  \`\`\`
+- **Cost**: start API free; GPU uptime cost accounted in EC2 epic.
+"
 
-Context: Queue must self-clean to avoid memory leaks.
-
-**Acceptance Criteria**
-- [ ] Generate UUID v4 → key \`job:{uuid}\`, TTL 300 s.
-- [ ] Job JSON: \`prompt\`, \`idle\`, \`reply_s3\`, \`timestamp\`.
-- [ ] On Redis error → 503, metric \`RedisEnqueueFail=1\`.
-- [ ] Integration test (`fakeredis`) asserts TTL 295-305 s.
-- [ ] Emit CloudWatch metric \`JobsEnqueued\`.
-
-**Notes**
-- Use connection pool for speed; unit test patch must supply fake pool.  
-- Duplicate UUID collision is statistically impossible; no extra lookup needed."
-
-create_story "LAM-004" "GPU Cold-Boot Logic" \
-"Belongs to **Epic #$EPIC_ID**
-
-Context: Router decides when to pay for GPU.
-
-**Acceptance Criteria**
-- [ ] Detect EC2 state: \`stopped → pending → running\`; no duplicate start in \"pending\".
-- [ ] Tag filter: \`env=tinyllama\`, fail if >1 node (explicit error 500).
-- [ ] Call \`start_instances\`, return 202 body: \`{\"status\":\"starting\",\"eta\":90}\`.
-- [ ] Metric \`EC2Starts\` +1 per cold boot.
-- [ ] boto3 unit tests stub three branches (stopped/pending/running).
-
-**Warnings**
-- Incorrect handling of \"pending\" led to race in early API JWT cache; replicate tests for state transitions."
-
-create_story "LAM-005" "Immediate 202 + Request-ID Reply" \
-"Belongs to **Epic #$EPIC_ID**
-
-Context: GUI must remain responsive while job runs.
-
-**Acceptance Criteria**
-- [ ] Warm path p95 latency ≤ 60 ms (AWS X-Ray).
-- [ ] Response: \`{\"status\":\"queued\",\"id\":\"<uuid>\"}\`, header \`X-Request-Id:<uuid>\`.
-- [ ] X-Ray segment name must equal UUID for quick Insights queries.
-- [ ] Canary Lambda logs sample payloads for 24 h.
-- [ ] Add GUI-API-LAM headless smoke test: login → prompt → 202, ensure \`X-Request-Id\` echoed.
-
-**Definition of Done**
-- GUI headless smoke test passes in CI.
-- Dashboard shows p95 latency < 60 ms after five warm invocations."
-
-echo "==> Lambda epic and five stories DONE"

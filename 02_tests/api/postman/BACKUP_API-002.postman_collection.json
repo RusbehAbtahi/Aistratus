@@ -1,0 +1,126 @@
+{
+  "info": {
+    "name": "API-002 Cognito JWT Suite",
+    "_postman_id": "11111111-2222-3333-4444-555555555555",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",  "value": "{{baseUrl}}" },
+    { "key": "validJwt", "value": "{{validJwt}}" }
+  ],
+  "item": [
+    {
+      "name": "Happy Path / infer → 200",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', () => pm.response.code === 200);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{validJwt}}" },
+          { "key": "Content-Type",  "value": "application/json" }
+        ],
+        "url": { "raw": "{{baseUrl}}/infer", "host": ["{{baseUrl}}"], "path": ["infer"] },
+        "body": { "mode": "raw", "raw": "{\"prompt\":\"ping\"}" }
+      }
+    },
+    {
+      "name": "Missing JWT → 401",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401', () => pm.response.code === 401);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "url": { "raw": "{{baseUrl}}/infer", "host": ["{{baseUrl}}"], "path": ["infer"] },
+        "body": { "mode": "raw", "raw": "{\"prompt\":\"ping\"}" }
+      }
+    },
+    {
+      "name": "Expired JWT → 403",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// generate a just-expired JWT locally for testing",
+              "const header = { alg: 'HS256', typ: 'JWT' };",
+              "const payload = { sub: 'expired', iat: 0, exp: 1, aud: 'bad', iss: 'http://test' };",
+              "function b64(u){return Buffer.from(JSON.stringify(u)).toString('base64url');}",
+              "pm.variables.set('expiredJwt', `${b64(header)}.${b64(payload)}.invalidsig`);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 403', () => pm.response.code === 403);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{expiredJwt}}" },
+          { "key": "Content-Type",  "value": "application/json" }
+        ],
+        "url": { "raw": "{{baseUrl}}/infer", "host": ["{{baseUrl}}"], "path": ["infer"] },
+        "body": { "mode": "raw", "raw": "{\"prompt\":\"ping\"}" }
+      }
+    },
+    {
+      "name": "Tampered JWT → 403",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const parts = pm.environment.get('validJwt').split('.');",
+              "parts[1] = 'AAAA'; // break payload signature",
+              "pm.variables.set('badJwt', parts.join('.'));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 403', () => pm.response.code === 403);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{badJwt}}" },
+          { "key": "Content-Type",  "value": "application/json" }
+        ],
+        "url": { "raw": "{{baseUrl}}/infer", "host": ["{{baseUrl}}"], "path": ["infer"] },
+        "body": { "mode": "raw", "raw": "{\"prompt\":\"ping\"}" }
+      }
+    }
+  ]
+}

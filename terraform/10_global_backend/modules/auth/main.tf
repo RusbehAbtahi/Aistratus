@@ -1,11 +1,18 @@
 resource "aws_cognito_user_pool" "main" {
-  provider = aws
-  name     = "tinyllama-user-pool"
+  name = "User pool - z-j4by"
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all   # ← one-liner, Terraform never diffs any fields
+  }
 }
 
 resource "aws_cognito_user_pool_client" "gui" {
-  provider = aws
-  name         = "tinyllama-gui-client"
+  name         = "tl-fif-desktop"
   user_pool_id = aws_cognito_user_pool.main.id
-  generate_secret = false
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
 }

@@ -9,9 +9,9 @@ participant ThreadServiceWorker as worker
 participant AwsTinyLlamaClient as client
 
 == User input ==
-User -> v: type "HaHa"
+User -> v: type "This is a test!"
 v -> v: select "AWS TinyLlama"
-v -> ctrl: on_send("HaHa")
+v -> ctrl: on_send("This is a test!")
 activate ctrl
 
 ctrl -> v: set_busy(True)
@@ -27,9 +27,9 @@ worker -> worker: job = _job_q.get()
 worker -> ctrl: _call_backend
 activate ctrl
 
-ctrl -> client: send_prompt("HaHa", meta)
+ctrl -> client: send_prompt("This is a test!", meta)
 activate client
-client --> ctrl: "[AWS-TinyLlama] echoed: HaHa..."
+client --> ctrl: "[AWS-TinyLlama] echoed: This is a test!..."
 deactivate client
 
 ctrl --> worker: result {"ok":True,...}
