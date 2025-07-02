@@ -1,129 +1,142 @@
-#!/usr/bin/env bash
-# ------------------------------------------------------------------
-# create_epic_api.sh — Creates Epic 2 API stories, labels, milestone
-# Prereqs: gh auth login ✔, repo cloned, run from repo root
-# Usage:   bash 04_scripts/gh/create_epic_api.sh
-# ------------------------------------------------------------------
-set -euo pipefail
+#!/bin/bash
 
-# ---------- 0.  Labels ------------------------------------------------
-echo "==> Ensuring labels"
-gh label create epic  --description "Parent issue that groups user stories" --color BFD4F2 2>/dev/null || true
-gh label create api   --description "Edge API work"                        --color E99695 2>/dev/null || true
-gh label create story --description "Individual user story"                --color 7057FF 2>/dev/null || true
+# API-003 – Gateway Hardening & Per-User Throttling
+gh issue create -t "API-003 · Gateway Hardening & Per-User Throttling" -l "api,story" -b "Parent: #49
 
-# ---------- 1.  Milestone ---------------------------------------------
-echo "==> Ensuring milestone"
-REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
-gh api "repos/$REPO/milestones" \
-  -f title="Intermediate Stage" \
-  -f state="open" \
-  -F description="All intermediate-stage work (GUI + on-demand GPU inference)" \
-  > /dev/null 2>&1 || true
+### Context
 
-# ---------- 2.  Epic ---------------------------------------------------
-echo "==> Creating Epic 2 – Secure Edge API Gateway"
-cat > /tmp/epic_api.md <<'EOF'
-**Epic Goal**
+The public HTTP API (\`/infer\`, \`/stop\`, \`/ping\`) must enforce **Cognito-JWT authentication** and protect against abuse (GUI retry loops, script attacks). Past audits flagged two risks: (1) route settings can be overwritten by stage-level imports, and (2) API Gateway’s default logging obscures the client \`sub\`, making forensic work tedious.
 
-Expose a single, authenticated HTTP API surface (`/infer`, `/stop`, `/ping`) that blocks bad traffic, enforces cost-safe throttling, and produces audit-grade logs.
+### Acceptance Criteria
 
-**Why it matters**
+1. **JWT Verification**
+   - Requests without \`Authorization: Bearer <id token>\` → **401** in ≤ 150 ms.
+   - Expired or malformed tokens → **403** with body \`{\"error\":\"invalid_token\"}\`.
+   - JWKS cached ≤ 10 min; cache-miss latency ≤ 300 ms (cold).
+2. **Per-User Throttling**
+   - Burst ≤ 5 req/s, rate ≤ 20 req/min **per Cognito \`sub\`**.
+   - Exceeding limits returns **429** and header \`Retry-After: 60\`.
+   - CloudWatch metric \`ApiRateLimitBreaches\` increments on every 429.
+3. **Immutable Route Settings**
+   - Terraform resource \`aws_apigatewayv2_route_settings\` applied to each route with explicit \`throttling_burst_limit\` and \`throttling_rate_limit\`.
+   - A Terraform **post-apply test** (\`tests/api_route_settings_test.py\`, using boto3) asserts the burst/rate limits match the Terraform values.
+4. **Positive & Negative Tests** (CI job \`api_hardening_spec\`)
+   - Postman/newman collection runs:
+     - valid token ✓200,
+     - missing token ✓401,
+     - tampered signature ✓403,
+     - 6 rapid calls ✓1×429.
+5. **Documentation**
+   - \`docs/api/jwt_auth.md\` explains Cognito pool IDs, import script, and provides \`curl\` examples for each failure mode.
 
-API Gateway is the security and observability gate for all user and internal access.
+### Technical Notes / Steps
 
-**Acceptance**
+- **Terraform**
+  \`\`\`hcl
+  resource \"aws_apigatewayv2_route_settings\" \"infer_rl\" {
+    api_id                = aws_apigatewayv2_api.edge.id
+    stage_name            = aws_apigatewayv2_stage.prod.name
+    route_key             = \"POST /infer\"
+    throttling_burst_limit = 5
+    throttling_rate_limit  = 20
+  }
+  # repeat for /stop and /ping …
+  \`\`\`
+- **Authorizer** (\`modules/auth/cognito.tf\`) generates pool + app-client; output the issuer URL and JWKs URI for \`openapi.yaml\` security schema.
+- **Contract Tests**
+  \`\`\`bash
+  newman run tests/postman/api_hardening.postman_collection.json \\
+         --env-var ISSUER_URL=\$COGNITO_ISSUER \\
+         --env-var CLIENT_ID=\$COGNITO_APP_ID
+  \`\`\`
+- **CI Hook**: GitHub Action \`api_hardening.yml\` blocks merge unless all Postman tests pass and \`pytest tests/api_route_settings_test.py\` is green.
+- **Patch:** Document in \`docs/api/jwt_auth.md\` the exact steps for manual rollback using:
+  \`\`\`bash
+  terraform apply -refresh-only -replace=aws_apigatewayv2_route_settings.<resource_name>
+  \`\`\`
+  (Specify the actual resource names explicitly.)
 
-– Stories API-001…API-005 all *Done*  
-– OpenAPI contract, end-to-end security tests, and cost metrics signed off
-EOF
+- **Cost**: extra CloudWatch metrics ≈ €0.05/mo; JWT authorizer execution ≈ €0.40/mo at 50 req/day.
+"
 
-EPIC_URL=$(gh issue create \
-  --title "Epic 2 – Secure Edge API Gateway" \
-  --label epic,api \
-  --body-file /tmp/epic_api.md \
-  --milestone "Intermediate Stage" | tail -n1)
-EPIC_ID=${EPIC_URL##*/}
-echo "Epic #$EPIC_ID created"
+# API-004 – CORS & Structured JSON Access Logging
+gh issue create -t "API-004 · CORS & Structured JSON Access Logging" -l "api,story" -b "Parent: #49
 
-# ---------- 3.  Helper to spawn stories --------------------------------
-create_story () {
-  local id="$1" ; shift
-  local title="$1" ; shift
-  local body="$1"
-  printf '%s\n' "$body" > /tmp/body.md
-  gh issue create \
-    --title "$id  $title" \
-    --label api,story \
-    --body-file /tmp/body.md \
-    --milestone "Intermediate Stage" \
-    > /dev/null
-  echo "  • $id created"
-}
+### Context
 
-# ---------- 4.  API stories --------------------------------------------
+Frontend (Tkinter GUI and future mobile) is served from \`localhost\` and potentially file URLs; all other origins must be rejected. Audit RISK-note highlighted that default access logs are unstructured and retention unspecified.
 
-echo "==> Creating API stories"
+### Acceptance Criteria
 
-create_story "API-001" "API Skeleton & Test Harness" \
-"Belongs to **Epic #$EPIC_ID**
+1. **CORS Policy**
+   - Allowed origins: \`http://localhost:*\` and \`capacitor://*\`.
+   - Allowed methods: \`POST, GET, OPTIONS\`; headers: \`Authorization, Content-Type\`.
+   - Pre-flight (\`OPTIONS\`) returns **204** under 100 ms.
+2. **Structured Logging**
+   - Enable JSON access logging with fields \`requestId, ip, route, status, jwtSub, latencyMs, userAgent\`.
+   - Logs shipped to CloudWatch group \`/apigw/tinyllama-access\` with \`retention_in_days = 30\`.
+3. **Cost Estimate** comment in Terraform: ≤ 100 MB/mo ≈ €0.00 (free tier); flag alert at 70 MB.
+4. **Smoke Test**
+   - CI sends \`OPTIONS /infer\` from disallowed origin → **403**.
+   - Logs must contain \`origin\":\"evil.com\"\` and \`status\":403\`.
 
-Context: Set up repo folders, pytest infrastructure, and a failing integration test to enforce TDD.
+### Technical Notes
 
-**Acceptance Criteria:**
-- Create package structure: \`api/\` with empty \`routes.py\`, \`tests/\` with pytest scaffold.
-- GitHub Action runs \`pytest\` and fails on placeholder test.
-- Include minimal \`openapi.yaml\` with empty path definitions.
-- README documents local \`uvicorn\` mock run.
-- Assign ownership via GitHub \`CODEOWNERS\` file (API PRs routed to back-end team)."
+- **Terraform snippet for CORS on HTTP API Stage:**
+  \`\`\`hcl
+  cors_configuration {
+    allow_origins = [\"http://localhost:*\", \"capacitor://*\"]
+    allow_methods = [\"GET\",\"POST\",\"OPTIONS\"]
+    allow_headers = [\"Authorization\",\"Content-Type\"]
+  }
+  \`\`\`
+- **Patch:** Add the explicit full JSON format to the Terraform snippet for access logging to match acceptance criteria explicitly:
+  \`\`\`hcl
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_access.arn
+    format = jsonencode({
+      requestId  = \"\$context.requestId\"
+      ip         = \"\$context.identity.sourceIp\"
+      route      = \"\$context.routeKey\"
+      status     = \"\$context.status\"
+      jwtSub     = \"\$context.authorizer.claims.sub\"
+      latencyMs  = \"\$context.responseLatency\"
+      userAgent  = \"\$context.identity.userAgent\"
+    })
+  }
+  \`\`\`
+- Access-log format: \`\$context.requestId \$context.identity.sourceIp ...\`
+- Add CloudWatch Insights query (\`queries/api_5xx.cwi\`) committed under \`observability/\`.
+"
 
-create_story "API-002" "JWT Authorizer via Cognito" \
-"Belongs to **Epic #$EPIC_ID**
+# API-005 – GUI Login Button → Cognito OAuth Flow
+gh issue create -t "API-005 · GUI Login Button → Cognito OAuth Flow" -l "api,story" -b "Parent: #49
 
-Context: All edge calls must prove identity without warming downstream services.
+### Context
 
-**Acceptance Criteria:**
-- Requests lacking valid \`Authorization\` header return **401 within 150 ms**.
-- Expired/invalid JWTs return **403**; valid tokens forward claims.
-- API Gateway caches JWKs ≤ 10 min.
-- Postman tests show happy path + three negative cases.
-- Contract test in CI hits a mocked JWKS endpoint.
-- Clearly document the Cognito setup process explicitly in README (\`api/README.md\`) to avoid configuration confusion later."
+The Tkinter GUI now has a **“Login”** button (see \`gui_view.py\`). Pressing it must open the Cognito Hosted-UI, complete the OAuth code flow, and store the ID token in memory; no AWS keys are ever written to disk.
 
-create_story "API-003" "Per-User Throttling & CORS Enforcement" \
-"Belongs to **Epic #$EPIC_ID**
+### Acceptance Criteria
 
-Context: Prevent runaway GUI loops and hostile scripts.
+1. **Desktop Flow**
+   - Button click opens system browser at \`\${COGNITO_DOMAIN}/oauth2/authorize?...&redirect_uri=http://127.0.0.1:8765/callback\`.
+   - Local HTTP server (embedded in \`auth_controller.py\`) listens once, captures \`code\`, exchanges for tokens via \`grant_type=authorization_code\`.
+   - On success, AppState.auth_status → \`ok\`; lamp turns green within 3 s.
+2. **Token Handling**
+   - Store \`id_token\` in memory only; **no refresh token** stored.
+   - Automatically refresh by re-login when a 401 appears.
+3. **Security**
+   - \`PKCE\` (S256) required.
+   - Loopback redirect uses random, non-privileged port; listener shuts down after 30 s.
+4. **Tests**
+   - \`tests/gui/test_auth_controller.py\` mocks Cognito endpoints and asserts state lamp transitions (\`off→pending→ok\`).
+   - Integration test on CI uses headless Chrome + local Cognito stub.
+5. **Docs**
+   - \`docs/gui/login_flow.md\` includes sequence diagram and troubleshooting tips (e.g., Keychain pop-ups on macOS).
 
-**Acceptance Criteria:**
-- Burst limit **5 req/s**, sustained **20 req/min** per Cognito \`sub\`.
-- Exceeding limits returns **429** with proper \`Retry-After\` header.
-- CORS allows \`http://localhost:*\`; all other origins blocked.
-- Smoke test sends 6 rapid calls; last must return 429.
-- Emit metric \`RateLimitBreaches\` to CloudWatch."
+### Technical Notes
 
-create_story "API-004" "Structured JSON Access Logging" \
-"Belongs to **Epic #$EPIC_ID**
-
-Context: Enable rapid troubleshooting through structured, machine-parseable logs.
-
-**Acceptance Criteria:**
-- JSON log format: \`requestId\`, \`ip\`, \`route\`, \`status\`, \`latencyMs\`.
-- Logs stored in CloudWatch group \`/apigw/tl-fif\` with 30-day retention.
-- CloudWatch Insights query saved as \`queries/api_latency.cwi\`.
-- CI asserts log fields via AWS SDK stub.
-- p95 latency alarm (≥300 ms 5 min) created and enabled."
-
-create_story "API-005" "Health Check Route (/ping)" \
-"Belongs to **Epic #$EPIC_ID**
-
-Context: Lightweight endpoint for automated uptime checks.
-
-**Acceptance Criteria:**
-- \`GET /ping\` returns \`{\"status\":\"ok\"}\` within 100 ms.
-- Route is JWT-exempt, requires VPC-only source CIDR 10.20.0.0/22.
-- Terraform outputs URL for external health-checkers (e.g., Pingdom).
-- Synthetic test in CloudWatch Synthetics checks every minute.
-- Failure 3/5 iterations triggers PagerDuty alert."
-
-echo "==> API epic and five stories DONE"
+- env vars in GUI: \`COGNITO_DOMAIN\`, \`COGNITO_CLIENT_ID\`.
+- Python code for PKCE and auth_url construction.
+- Idle logout: when AppState detects no user activity for 60 min, clear token.
+"

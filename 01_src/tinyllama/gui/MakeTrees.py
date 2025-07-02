@@ -9,6 +9,7 @@ include_dirs = [
     "03_data",
     "04_scripts",
     "05_docs",
+    "terraform"
 ]
 
 def print_tree(path, prefix=""):
