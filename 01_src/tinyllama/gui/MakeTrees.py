@@ -3,10 +3,10 @@ import os
 # --- CONFIGURATION ---
 base_path = r"C:\0000\Prompt_Engineering\Projects\GTPRusbeh\Aistratus"
 include_dirs = [
+    ".github",
     "00_infra",
     "01_src",
     "02_tests",
-    "03_data",
     "04_scripts",
     "05_docs",
     "terraform",
