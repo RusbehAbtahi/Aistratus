@@ -1,5 +1,8 @@
 name: API – FastAPI + JWT CI
 
+# ─────────────────────────────────────────────────────────────
+# When to run
+# ─────────────────────────────────────────────────────────────
 on:
   push:
     paths:
@@ -12,23 +15,57 @@ on:
       - "api/**"
       - "02_tests/api/**"
 
+# ─────────────────────────────────────────────────────────────
+# GitHub → AWS OIDC permission (MUST be here)
+# ─────────────────────────────────────────────────────────────
+permissions:
+  id-token: write   # allow the runner to get an OIDC token
+  contents: read    # still let checkout read the repo
+
+# ─────────────────────────────────────────────────────────────
+# Main job
+# ─────────────────────────────────────────────────────────────
 jobs:
   test-and-postman:
     runs-on: ubuntu-latest
+
     env:
-      # real secrets (set once in repo → Settings → Actions → Secrets)
+      AWS_DEFAULT_REGION: eu-central-1      # <-- you already had this
       COGNITO_USER_POOL_ID:  ${{ secrets.COGNITO_USER_POOL_ID }}
       COGNITO_APP_CLIENT_ID: ${{ secrets.COGNITO_APP_CLIENT_ID }}
       API_BASE_URL:          ${{ secrets.API_BASE_URL }}
-      # local test helpers
-      LOCAL_JWKS_PATH: ${{ github.workspace }}/02_tests/api/data/mock_jwks.json
+      LOCAL_JWKS_PATH:       ${{ github.workspace }}/02_tests/api/data/mock_jwks.json
+
     steps:
+      # 1) checkout code
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
+      # 2) obtain short-lived AWS creds via your IAM role
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE }}
+          aws-region: eu-central-1
 
-      - name: Install Python Deps
+      # 3) load optional env selector (.env_public → $TLFIF_ENV)
+      - name: Load TLFIF_ENV from .env_public
+        run: |
+          if [ -f .env_public ]; then
+            VAL=$(grep -E '^TLFIF_ENV=' .env_public | cut -d= -f2)
+            echo "TLFIF_ENV=${VAL:-default}" >> $GITHUB_ENV
+          else
+            echo "TLFIF_ENV=default" >> $GITHUB_ENV
+          fi
+
+      - name: Verify TLFIF_ENV
+        run: echo "✅ Using TLFIF_ENV=$TLFIF_ENV"
+
+      # 4) install Python deps & run pytest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
@@ -36,13 +73,15 @@ jobs:
       - name: Run Pytest
         run: pytest -q
 
+      # 5) run Postman / Newman tests
       - uses: actions/setup-node@v3
-        with: { node-version: "18" }
+        with:
+          node-version: "18"
 
       - name: Install Newman
         run: npm install -g newman
 
-      - name: Run Postman Collection
+      - name: Run Postman collection
         run: |
           newman run 02_tests/api/postman/API-002.postman_collection.json \
             -e 02_tests/api/postman/tinyllama.postman_env.json \
