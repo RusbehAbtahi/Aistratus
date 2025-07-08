@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     # These secrets and paths are unchanged:
     env:
+      AWS_DEFAULT_REGION: eu-central-1      # ← add this line
       COGNITO_USER_POOL_ID:  ${{ secrets.COGNITO_USER_POOL_ID }}
       COGNITO_APP_CLIENT_ID: ${{ secrets.COGNITO_APP_CLIENT_ID }}
       API_BASE_URL:          ${{ secrets.API_BASE_URL }}
