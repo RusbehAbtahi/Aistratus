@@ -15,20 +15,39 @@ on:
 jobs:
   test-and-postman:
     runs-on: ubuntu-latest
+    # These secrets and paths are unchanged:
     env:
-      # real secrets (set once in repo → Settings → Actions → Secrets)
       COGNITO_USER_POOL_ID:  ${{ secrets.COGNITO_USER_POOL_ID }}
       COGNITO_APP_CLIENT_ID: ${{ secrets.COGNITO_APP_CLIENT_ID }}
       API_BASE_URL:          ${{ secrets.API_BASE_URL }}
-      # local test helpers
-      LOCAL_JWKS_PATH: ${{ github.workspace }}/02_tests/api/data/mock_jwks.json
+      LOCAL_JWKS_PATH:       ${{ github.workspace }}/02_tests/api/data/mock_jwks.json
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
+      # ────────────────────────────────────────────────────────────────────────
+      # STEP 1: Dynamically load your .env_public into $TLFIF_ENV
+      # ────────────────────────────────────────────────────────────────────────
+      - name: Load TLFIF_ENV from .env_public
+        run: |
+          if [ -f .env_public ]; then
+            VAL=$(grep -E '^TLFIF_ENV=' .env_public | cut -d= -f2)
+            echo "TLFIF_ENV=${VAL:-default}" >> $GITHUB_ENV
+          else
+            echo "TLFIF_ENV=default" >> $GITHUB_ENV
+          fi
 
-      - name: Install Python Deps
+      - name: Verify TLFIF_ENV
+        run: echo "✅ Using TLFIF_ENV=$TLFIF_ENV"
+
+      # ────────────────────────────────────────────────────────────────────────
+      # STEP 2: Set up Python & install dependencies
+      # ────────────────────────────────────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python Dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
@@ -36,8 +55,12 @@ jobs:
       - name: Run Pytest
         run: pytest -q
 
+      # ────────────────────────────────────────────────────────────────────────
+      # STEP 3: Run Postman collection
+      # ────────────────────────────────────────────────────────────────────────
       - uses: actions/setup-node@v3
-        with: { node-version: "18" }
+        with:
+          node-version: "18"
 
       - name: Install Newman
         run: npm install -g newman
