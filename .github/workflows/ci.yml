@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     # These secrets and paths are unchanged:
     env:
-      AWS_DEFAULT_REGION: eu-central-1      # ← add this line
+      AWS_DEFAULT_REGION: eu-central-1      
       COGNITO_USER_POOL_ID:  ${{ secrets.COGNITO_USER_POOL_ID }}
       COGNITO_APP_CLIENT_ID: ${{ secrets.COGNITO_APP_CLIENT_ID }}
       API_BASE_URL:          ${{ secrets.API_BASE_URL }}
@@ -25,7 +25,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
+        ─────────────────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE }}   # 
+          aws-region: eu-central-1                         # 
+      # ──────────────────────────────────────────────────
       # ────────────────────────────────────────────────────────────────────────
       # STEP 1: Dynamically load your .env_public into $TLFIF_ENV
       # ────────────────────────────────────────────────────────────────────────
