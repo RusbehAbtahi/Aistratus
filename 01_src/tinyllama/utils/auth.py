@@ -1,3 +1,5 @@
+# 01_src/tinyllama/utils/auth.py
+
 """
 tinyllama.utils.auth
 --------------------
@@ -10,12 +12,13 @@ so we never suffer the “unknown-kid / audience mismatch” bug again.
 
 from __future__ import annotations
 
-import json, os, time
+import json
+import os
+import time
 from pathlib import Path
 from typing import Dict, Any
 
 from jose import jwt, jwk, JWTError
-
 from jose.utils import base64url_decode
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -24,18 +27,16 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 # 1)  Test-token generator  (imported — we DO NOT duplicate code)
 # ─────────────────────────────────────────────────────────────────────────────
 from .jwt_tools import make_token                    # already creates key & JWKS
-#   → keep as-is; nothing else to do here.
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2)  Runtime verifier  (used by API FastAPI & Lambda router)
 # ─────────────────────────────────────────────────────────────────────────────
-COGNITO_APP_CLIENT_ID = os.getenv("COGNITO_APP_CLIENT_ID", "dummy-aud")
-# issuer defaults to Cognito user-pool URL; override in tests if needed
-COGNITO_ISSUER        = os.getenv(
-    "COGNITO_ISSUER",
-    "https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_AP5Xpw0cL",
-)
+from tinyllama.utils.ssm import get_id
+
+# replace env lookups with SSM lookups:
+COGNITO_APP_CLIENT_ID = get_id("cognito_client_id")
+AWS_REGION            = os.getenv("AWS_REGION", "eu-central-1")
+COGNITO_ISSUER        = f"https://cognito-idp.{AWS_REGION}.amazonaws.com/{get_id('cognito_user_pool_id')}"
 
 # local JWKS file for pytest; in production the verifier downloads JWKS lazily
 _LOCAL_JWKS_PATH = Path(os.getenv("LOCAL_JWKS_PATH", ""))

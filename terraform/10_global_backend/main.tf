@@ -31,3 +31,18 @@ module "networking" {
 module "auth" {
   source = "./modules/auth"
 }
+
+# WHY
+#   Glue – passes IDs + env to the writer module.
+# WHERE
+#   At the bottom of 10_global_backend/main.tf
+# HOW
+#   git add, terraform plan.
+
+module "ssm_params" {
+  source = "./modules/ssm_params"
+
+  env           = var.env
+  ids           = local.ids
+  global_values = local.global_ids       # refers to the output above
+}
