@@ -113,3 +113,22 @@ venv_tinyllama/
 *.pyc
 __pycache__/
 .env.dev
+04_scripts/no_priv/tools/terraform
+
+# large or local-only stuff
+*.zip
+.venv/
+AWSCLIV2-*.zip
+router.zip
+*.lnk
+04_scripts/no_priv/
+01_src/lambda_layers/
+
+# local / big:
+*.zip
+.venv/
+04_scripts/no_priv/
+*.lnk
+01_src/lambda_layers/
+router.zip
+01_src/lambda_layers/shared_deps/shared_deps.zip

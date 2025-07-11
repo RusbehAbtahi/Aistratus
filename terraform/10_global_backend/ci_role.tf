@@ -44,12 +44,12 @@ resource "aws_iam_role_policy" "github_actions_deployer_policy" {
       {
         Effect   = "Allow"
         Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParameterHistory"]
-        Resource = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/tlfif/cognito/*"
+        Resource = "arn:aws:ssm:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:parameter/tlfif/cognito/*"
       },
       # backend-state bucket read/write so CI can run terraform plan/apply
       {
-        Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
         Resource = [
           "arn:aws:s3:::tlfif-terraform-state",
           "arn:aws:s3:::tlfif-terraform-state/*"
@@ -70,4 +70,4 @@ output "github_actions_role_arn" {
   description = "IAM role that the GitHub Actions workflow assumes."
 }
 data "aws_caller_identity" "current" {}
-data "aws_region"          "current" {}
+data "aws_region" "current" {}

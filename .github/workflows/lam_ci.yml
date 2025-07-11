@@ -1,0 +1,47 @@
+name: TinyLlama CI
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request: {}
+
+env:
+  AWS_REGION: eu-central-1
+  ENV: dev
+  ARTIFACT_BUCKET: tinyllama-data-108782059508
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    permissions: { id-token: write, contents: read }
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with: { python-version: "3.12" }
+
+    - name: Install dev deps
+      run: pip install -r requirements.txt -r dev-requirements.txt
+
+    - name: Build shared_deps layer zip
+      working-directory: 01_src/lambda_layers/shared_deps
+      run: bash build_layer_ci.sh
+
+    - name: Build router.zip
+      run: make lambda-package
+
+    - name: Run tests
+      run: pytest -q
+
+    - name: Configure AWS creds (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT }}:role/tlfif-github-actions-deployer
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform apply
+      env:
+        TF_VAR_artifact_bucket: ${{ env.ARTIFACT_BUCKET }}
+      run: make tf-apply ENV=${{ env.ENV }}

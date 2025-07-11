@@ -5,15 +5,9 @@ name: API – FastAPI + JWT CI
 # ─────────────────────────────────────────────────────────────
 on:
   push:
-    paths:
-      - "api/**"
-      - "02_tests/api/**"
-      - ".github/workflows/api_ci.yml"
-      - "requirements.txt"
-  pull_request:
-    paths:
-      - "api/**"
-      - "02_tests/api/**"
+    branches: [ "**" ]
+  pull_request: {}
+
 
 # ─────────────────────────────────────────────────────────────
 # GitHub → AWS OIDC permission (MUST be here)
