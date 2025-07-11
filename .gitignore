@@ -132,3 +132,7 @@ router.zip
 01_src/lambda_layers/
 router.zip
 01_src/lambda_layers/shared_deps/shared_deps.zip
+
+# legacy / scratch terraform
+terraform/maintf_old/
+terraform/10_global_backend/all_tf_files.txt
