@@ -1,0 +1,34 @@
+name: Router Canary
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # every 5 minutes
+
+jobs:
+  ping-and-rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Curl /ping
+        id: ping
+        run: |
+          set -e
+          URL="https://$(terraform output -raw api_url)/ping"
+          if ! curl -sSf -m 5 "$URL"; then
+            echo "::set-output name=failed::true"
+          else
+            echo "::set-output name=failed::false"
+          fi
+
+      - name: Count consecutive failures
+        id: counter
+        run: |
+          PREV=${{ steps.ping.outputs.failed }}
+          COUNT=$(gh run view --json conclusion --limit 2 \
+            | jq '[.[] | select(.conclusion!="success")] | length')
+          echo "::set-output name=count::$COUNT"
+
+      - name: Roll back if needed
+        if: steps.counter.outputs.count == '2'
+        run: |
+          echo "Two canary failures in a row; rolling back..."
+          python tools.py lambda-rollback --version $(python tools.py --version-from-terraform)

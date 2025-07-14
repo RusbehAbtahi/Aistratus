@@ -101,11 +101,21 @@ def lambda_package() -> None:
 
 def tf_apply() -> None:
     tf = terraform_bin()          # resolve binary
-
     lambda_package()              # always rebuild first
-    run([tf, "init", "-backend-config=../../backend.auto.tfvars"], cwd=TERRAFORM_DIR)
+
+    # ----- locate backend.auto.tfvars wherever it really is -------------
+    backend_cfg = REPO_ROOT / "terraform" / "backend.auto.tfvars"
+    init_cmd = [tf, "init"]
+    if backend_cfg.exists():
+        init_cmd += [f"-backend-config={backend_cfg}"]
+    else:
+        safe_print(f"[WARN] {backend_cfg} not found – running terraform init with workspace-defaults")
+
+    # --------------------------------------------------------------------
+    run(init_cmd, cwd=TERRAFORM_DIR)
     run([tf, "apply", "-auto-approve"], cwd=TERRAFORM_DIR)
     safe_print("OK   : terraform apply finished")
+
 
 def lambda_rollback(version: str) -> None:
     if not version.isdigit():

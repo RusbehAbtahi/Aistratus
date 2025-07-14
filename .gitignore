@@ -136,3 +136,5 @@ router.zip
 # legacy / scratch terraform
 terraform/maintf_old/
 terraform/10_global_backend/all_tf_files.txt
+
+10-Archive/

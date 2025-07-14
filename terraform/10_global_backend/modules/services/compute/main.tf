@@ -24,6 +24,7 @@ resource "aws_lambda_function" "router" {
   tracing_config { mode = "Active" }
   environment {
     variables = {
+      TL_DISABLE_LAM_ROUTER = "0"
       COGNITO_ISSUER = "https://cognito-idp.${var.aws_region}.amazonaws.com/${data.aws_ssm_parameter.pool.value}"
       COGNITO_AUD    = data.aws_ssm_parameter.client.value
     }
