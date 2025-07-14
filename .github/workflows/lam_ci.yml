@@ -35,12 +35,12 @@ jobs:
 
     - name: Set required env vars for pytest
       run: |
-        echo "COGNITO_USER_POOL_ID=eu-central-1_TEST" >> $GITHUB_ENV
-        echo "COGNITO_APP_CLIENT_ID=local-test-client-id" >> $GITHUB_ENV
-        # prevent boto3 NoCredentialsError without using real creds
-        echo "AWS_ACCESS_KEY_ID=test"                   >> $GITHUB_ENV
-        echo "AWS_SECRET_ACCESS_KEY=test"               >> $GITHUB_ENV
-        echo "AWS_SESSION_TOKEN=test"                   >> $GITHUB_EN
+        echo 'COGNITO_USER_POOL_ID=eu-central-1_TEST'    >> "${GITHUB_ENV}"
+        echo 'COGNITO_APP_CLIENT_ID=local-test-client-id' >> "${GITHUB_ENV}"
+        echo 'AWS_ACCESS_KEY_ID=test'                     >> "${GITHUB_ENV}"
+        echo 'AWS_SECRET_ACCESS_KEY=test'                 >> "${GITHUB_ENV}"
+        echo 'AWS_SESSION_TOKEN=test'                     >> "${GITHUB_ENV}"
+
 
     - name: Run tests
       run: pytest -q
