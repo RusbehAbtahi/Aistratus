@@ -7,8 +7,6 @@ on:
 
 env:
   AWS_REGION: eu-central-1
-  ENV: dev
-  ARTIFACT_BUCKET: tinyllama-data-108782059508
 
 jobs:
   build-deploy:
@@ -20,17 +18,18 @@ jobs:
 
     - name: Set up Python
       uses: actions/setup-python@v5
-      with: { python-version: "3.12" }
+      with:
+        python-version: "3.12"
 
     - name: Install dev deps
-      run: pip install -r requirements.txt 
+      run: pip install -r requirements.txt
 
     - name: Build shared_deps layer zip
       working-directory: 01_src/lambda_layers/shared_deps
-      run: bash build_layer_ci.sh
+      run: python build_layer_ci.py
 
     - name: Build router.zip
-      run: make lambda-package
+      run: python tools.py lambda-package
 
     - name: Run tests
       run: pytest -q
@@ -41,7 +40,14 @@ jobs:
         role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT }}:role/tlfif-github-actions-deployer
         aws-region: ${{ env.AWS_REGION }}
 
+    - name: Load variables from .env_public
+      run: |
+        set -a
+        source .env_public
+        set +a
+        echo "TF_VAR_env=$TLFIF_ENV" >> $GITHUB_ENV
+        echo "TF_VAR_artifact_bucket=$ARTIFACT_BUCKET" >> $GITHUB_ENV
+      shell: bash
+
     - name: Terraform apply
-      env:
-        TF_VAR_artifact_bucket: ${{ env.ARTIFACT_BUCKET }}
-      run: make tf-apply ENV=${{ env.ENV }}
+      run: python tools.py tf-apply
