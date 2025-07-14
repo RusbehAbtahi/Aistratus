@@ -1,11 +1,8 @@
-# conftest.py  – final form
-import os, pytest
-from pathlib import Path
+import os
+from unittest.mock import patch
 
-@pytest.fixture(scope="session", autouse=True)
-def _inject_env():
-    root = Path(__file__).parent
-    os.environ["LOCAL_JWKS_PATH"] = str((root /
-        "02_tests/api/data/mock_jwks.json").resolve())
-    os.environ.setdefault("COGNITO_APP_CLIENT_ID",
-                          "scju2t2jhj79ed7juvt60t883")
+os.environ.setdefault("COGNITO_USER_POOL_ID", "eu-central-1_TEST")
+os.environ.setdefault("COGNITO_APP_CLIENT_ID", "local-test-client-id")
+
+patcher = patch('tinyllama.utils.ssm.get_id', lambda name: os.environ[name.upper()])
+patcher.start()
