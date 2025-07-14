@@ -22,4 +22,9 @@ unzip -q "$TMP_ZIP" terraform.exe -d "$TOOLS_DIR"
 rm "$TMP_ZIP"
 
 chmod +x "$TF_BIN"
+# ← new lines start here:
+cp "$TF_BIN" "${TOOLS_DIR}/terraform"
+chmod +x "${TOOLS_DIR}/terraform"
+# ← new lines end here
+
 echo "✅  terraform.exe installed → $TF_BIN"
