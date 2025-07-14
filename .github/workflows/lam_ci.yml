@@ -14,8 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { id-token: write, contents: read }
 
+
     steps:
     - uses: actions/checkout@v4
+
+    - name: Install Terraform
+      uses: hashicorp/setup-terraform@v1
+      with:
+        terraform_version: "1.8.5"
+
 
     - name: Set up Python
       uses: actions/setup-python@v5
