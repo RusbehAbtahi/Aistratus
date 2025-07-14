@@ -32,6 +32,12 @@ jobs:
     - name: Build router.zip
       run: python tools.py lambda-package
 
+
+    - name: Set required env vars for pytest
+      run: |
+        echo "COGNITO_USER_POOL_ID=eu-central-1_TEST" >> $GITHUB_ENV
+        echo "COGNITO_APP_CLIENT_ID=local-test-client-id" >> $GITHUB_ENV
+
     - name: Run tests
       run: pytest -q
 
