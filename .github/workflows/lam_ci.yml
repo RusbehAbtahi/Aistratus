@@ -48,7 +48,7 @@ jobs:
     - name: Configure AWS creds (OIDC)
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT }}:role/tlfif-github-actions-deployer
+        role-to-assume: arn:aws:iam::108782059508:role/tlfif-github-actions-deployer
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Load variables from .env_public
