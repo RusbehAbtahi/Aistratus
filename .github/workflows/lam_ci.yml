@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { id-token: write, contents: read }
 
-
     steps:
     - uses: actions/checkout@v4
 
@@ -22,9 +21,9 @@ jobs:
       uses: hashicorp/setup-terraform@v1
       with:
         terraform_version: "1.8.5"
+
     - name: Check Terraform path
       run: which terraform && terraform version
-
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -41,15 +40,13 @@ jobs:
     - name: Build router.zip
       run: python tools.py lambda-package
 
-
     - name: Set required env vars for pytest
       run: |
         echo 'COGNITO_USER_POOL_ID=eu-central-1_TEST'    >> "${GITHUB_ENV}"
         echo 'COGNITO_CLIENT_ID=local-test-client-id'    >> "${GITHUB_ENV}"
-        echo 'AWS_ACCESS_KEY_ID=test'                     >> "${GITHUB_ENV}"
-        echo 'AWS_SECRET_ACCESS_KEY=test'                 >> "${GITHUB_ENV}"
-        echo 'AWS_SESSION_TOKEN=test'                     >> "${GITHUB_ENV}"
-
+        echo 'AWS_ACCESS_KEY_ID=test'                    >> "${GITHUB_ENV}"
+        echo 'AWS_SECRET_ACCESS_KEY=test'                >> "${GITHUB_ENV}"
+        echo 'AWS_SESSION_TOKEN=test'                    >> "${GITHUB_ENV}"
 
     - name: Run tests
       run: pytest -q
@@ -60,20 +57,24 @@ jobs:
         role-to-assume: arn:aws:iam::108782059508:role/tlfif-github-actions-deployer
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Upload shared_deps layer to S3
-      run: |
-        aws s3 cp 01_src/lambda_layers/shared_deps/shared_deps.zip \
-          s3://${{ env.ARTIFACT_BUCKET }}/layers/tlfif-${{ env.ENV }}-shared-deps.zip \
-          --acl bucket-owner-full-control
-
     - name: Load variables from .env_public
       shell: bash
       run: |
         set -a
         source .env_public
         set +a
-        echo "TF_VAR_env=${TLFIF_ENV}" >> $GITHUB_ENV
+        # Terraform needs these:
+        echo "TF_VAR_env=${TLFIF_ENV}"             >> $GITHUB_ENV
         echo "TF_VAR_artifact_bucket=${ARTIFACT_BUCKET}" >> $GITHUB_ENV
+        # Shell (S3 upload) needs these too:
+        echo "TLFIF_ENV=${TLFIF_ENV}"              >> $GITHUB_ENV
+        echo "ARTIFACT_BUCKET=${ARTIFACT_BUCKET}"  >> $GITHUB_ENV
+
+    - name: Upload shared_deps layer to S3
+      run: |
+        aws s3 cp 01_src/lambda_layers/shared_deps/shared_deps.zip \
+          s3://$ARTIFACT_BUCKET/layers/tlfif-$TLFIF_ENV-shared-deps.zip \
+          --acl bucket-owner-full-control
 
     - name: Terraform apply
       run: python tools.py tf-apply
