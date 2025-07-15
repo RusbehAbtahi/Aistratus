@@ -1,0 +1,100 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SSMList",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeParameters",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SSMGet",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParameterHistory",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ssm:eu-central-1:108782059508:parameter/*"
+    },
+    {
+      "Sid": "IAMInspection",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:ListRolePolicies",
+        "iam:GetRolePolicy",
+        "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": [
+        "arn:aws:iam::108782059508:role/tlfif-default-router",
+        "arn:aws:iam::108782059508:role/tlfif-github-actions-deployer"
+      ]
+    },
+    {
+      "Sid": "S3StateBackend",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::tinnyllama-terraform-state"
+    },
+    {
+      "Sid": "S3StateBackendObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::tinnyllama-terraform-state/*"
+    },
+    {
+      "Sid": "DynamoDBLocks",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:UpdateItem"
+      ],
+      "Resource": "arn:aws:dynamodb:eu-central-1:108782059508:table/terraform_locks"
+    },
+    {
+      "Sid": "OIDCProvider",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetOpenIDConnectProvider"
+      ],
+      "Resource": "arn:aws:iam::108782059508:oidc-provider/token.actions.githubusercontent.com"
+    },
+    {
+      "Sid": "CognitoRead",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:GetUserPoolMfaConfig",
+        "cognito-idp:DescribeUserPoolClient"
+      ],
+      "Resource": "arn:aws:cognito-idp:eu-central-1:108782059508:userpool/eu-central-1_FvUbA75NY"
+    },
+    {
+      "Sid": "EC2Read",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeVpcAttribute",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeRouteTables"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

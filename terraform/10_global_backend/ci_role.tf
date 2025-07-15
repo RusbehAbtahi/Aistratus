@@ -35,39 +35,15 @@ resource "aws_iam_role" "github_actions_deployer" {
 
 # 3️⃣  Inline policy – **read-only SSM + TF state bucket access**
 resource "aws_iam_role_policy" "github_actions_deployer_policy" {
-  role = aws_iam_role.github_actions_deployer.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      # read SSM parameters written by modules/auth/ssm.tf
-      {
-        Effect   = "Allow"
-        Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParameterHistory"]
-        Resource = "arn:aws:ssm:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:parameter/tlfif/cognito/*"
-      },
-      # backend-state bucket read/write so CI can run terraform plan/apply
-      {
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
-        Resource = [
-          "arn:aws:s3:::tlfif-terraform-state",
-          "arn:aws:s3:::tlfif-terraform-state/*"
-        ]
-      },
-      # allow locking via DynamoDB if you use it
-      {
-        Effect   = "Allow"
-        Action   = ["dynamodb:*"]
-        Resource = "arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/terraform-lock"
-      }
-    ]
-  })
+  role   = aws_iam_role.github_actions_deployer.id
+  policy = file("${path.module}/updated-policy.json")
 }
 
 output "github_actions_role_arn" {
   value       = aws_iam_role.github_actions_deployer.arn
   description = "IAM role that the GitHub Actions workflow assumes."
 }
+
 data "aws_caller_identity" "current" {}
+
 data "aws_region" "current" {}
