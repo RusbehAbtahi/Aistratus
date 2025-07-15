@@ -54,23 +54,6 @@
       "Resource": "arn:aws:s3:::tinnyllama-terraform-state/*"
     },
     {
-      "Sid": "ArtifactBucketList",
-      "Effect": "Allow",
-      "Action": [
-        "s3:ListBucket"
-      ],
-      "Resource": "arn:aws:s3:::tinyllama-data-108782059508"
-    },
-    {
-      "Sid": "ArtifactBucketObjects",
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:PutObject"
-      ],
-      "Resource": "arn:aws:s3:::tinyllama-data-108782059508/layers/*"
-    },
-    {
       "Sid": "DynamoDBLocks",
       "Effect": "Allow",
       "Action": [
@@ -112,6 +95,18 @@
         "ec2:DescribeRouteTables"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "S3LayerUpload",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::tinyllama-data-108782059508/layers/*",
+        "arn:aws:s3:::tinyllama-data-108782059508"
+      ]
     }
   ]
 }
