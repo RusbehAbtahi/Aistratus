@@ -200,7 +200,16 @@
        "logs:ListTagsForResource"
       ],
        "Resource": "*"
-}
+   },
+   {
+        "Sid": "LogsDescribeMetricFilters",
+        "Effect": "Allow",
+         "Action": [
+        "logs:DescribeMetricFilters"
+      ],
+         "Resource": "*"
+  }
+
 
   ]
 }
