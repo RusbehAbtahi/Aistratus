@@ -12,6 +12,16 @@ jobs:
   ping-and-rollback:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: "1.8.5"
+
+      - name: Check Terraform path
+        run: which terraform && terraform version
+
       - name: Curl /ping
         id: ping
         run: |
@@ -32,7 +42,4 @@ jobs:
           echo "::set-output name=count::$COUNT"
 
       - name: Roll back if needed
-        if: steps.counter.outputs.count == '2'
-        run: |
-          echo "Two canary failures in a row; rolling back..."
-          python tools.py lambda-rollback --version $(python tools.py --version-from-terraform)
+        if: steps.c
