@@ -71,6 +71,14 @@
       "Resource": "arn:aws:s3:::tinyllama-data-108782059508/layers/*"
     },
     {
+      "Sid": "ArtifactBucketTagging",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObjectTagging"
+      ],
+      "Resource": "arn:aws:s3:::tinyllama-data-108782059508/layers/*"
+    },
+    {
       "Sid": "DynamoDBLocks",
       "Effect": "Allow",
       "Action": [
@@ -110,6 +118,70 @@
         "ec2:DescribeSubnets",
         "ec2:DescribeInternetGateways",
         "ec2:DescribeRouteTables"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LambdaGetLayerVersion",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetLayerVersion"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-central-1:108782059508:layer:tlfif-default-shared-deps:*"
+      ]
+    },
+    {
+      "Sid": "LambdaGetFunction",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+      ]
+    },
+    {
+      "Sid": "LambdaListVersions",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:ListVersionsByFunction"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+      ]
+    },
+    {
+      "Sid": "LambdaGetFunctionCodeSigningConfig",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunctionCodeSigningConfig"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+      ]
+    },
+    {
+      "Sid": "CloudWatchDescribeAlarms",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DescribeAlarms"
+      ],
+      "Resource": "arn:aws:cloudwatch:eu-central-1:108782059508:alarm:*"
+    },
+    {
+      "Sid": "LambdaGetAlias",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetAlias"
+      ],
+      "Resource": "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+    },
+    {
+      "Sid": "LogsDescribeLogGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups"
       ],
       "Resource": "*"
     }
