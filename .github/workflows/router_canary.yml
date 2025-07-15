@@ -1,8 +1,12 @@
 name: Router Canary
 
 on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/LAM-001-enable-router
   schedule:
-    - cron: '*/5 * * * *'  # every 5 minutes
+    - cron: '*/5 * * * *'
 
 jobs:
   ping-and-rollback:
