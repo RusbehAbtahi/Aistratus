@@ -27,11 +27,14 @@ jobs:
         id: ping
         run: |
           set -e
-          URL="https://$(terraform output -raw api_url)/ping"
-          if ! curl -sSf -m 5 "$URL"; then
+          URL="https://5pk2sd4jl3.execute-api.eu-central-1.amazonaws.com/ping"
+          echo "Pinging: $URL"
+          if ! curl -v -sSf -m 5 "$URL"; then
             echo "::set-output name=failed::true"
+            echo "Ping FAILED"
           else
             echo "::set-output name=failed::false"
+            echo "Ping SUCCESS"
           fi
 
       - name: Count consecutive failures
