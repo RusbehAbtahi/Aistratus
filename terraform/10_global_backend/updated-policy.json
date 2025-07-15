@@ -184,6 +184,23 @@
         "logs:DescribeLogGroups"
       ],
       "Resource": "*"
-    }
+    },
+    {
+       "Sid": "CloudWatchListTagsForResource",
+       "Effect": "Allow",
+       "Action": [
+       "cloudwatch:ListTagsForResource"
+     ],
+       "Resource": "arn:aws:cloudwatch:eu-central-1:108782059508:alarm:*"
+   },
+   {
+       "Sid": "LogsListTagsForResource",
+       "Effect": "Allow",
+       "Action": [
+       "logs:ListTagsForResource"
+      ],
+       "Resource": "*"
+}
+
   ]
 }
