@@ -24,3 +24,8 @@ variable "aws_region" {
   description = "AWS region for constructing Cognito issuer URL"
   type        = string
 }
+
+variable "shared_deps_layer_arn" {
+  description = "ARN for the shared Lambda Layer"
+  type        = string
+}

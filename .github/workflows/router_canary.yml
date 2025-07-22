@@ -23,11 +23,11 @@ jobs:
       - name: Check Terraform path
         run: which terraform && terraform version
 
-      - name: Curl /ping
+      - name: Curl /health
         id: ping
         run: |
           set -e
-          URL="https://5pk2sd4jl3.execute-api.eu-central-1.amazonaws.com/ping"
+          URL="https://5pk2sd4jl3.execute-api.eu-central-1.amazonaws.com/health"
           echo "Pinging: $URL"
           if ! curl -v -sSf -m 5 "$URL"; then
             echo "::set-output name=failed::true"

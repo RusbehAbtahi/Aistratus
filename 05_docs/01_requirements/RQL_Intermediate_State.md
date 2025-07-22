@@ -35,7 +35,7 @@
  |---------|--------|------------------------------------------|-----------------------------------|
  | /infer  | POST   | `{"prompt": str, "idle": int}`           | Main inference for LLM            |
  | /stop   | POST   | none                                     | Immediately stop GPU instance     |
- | /ping   | GET    | —                                        | GUI health check                  |
+ | /health   | GET    | —                                        | GUI health check                  |
 
  ### 2.2 Authorizer
  - Uses AWS Cognito user-pool; JWT token TTL 60 min.

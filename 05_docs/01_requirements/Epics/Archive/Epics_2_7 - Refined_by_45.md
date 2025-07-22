@@ -6,7 +6,7 @@
 ## ### API – Secure Edge API Gateway
 
 **Outcome:**
-Authenticated, rate-limited API surface (`/infer`, `/stop`, `/ping`) providing secure, cost-efficient, and audit-compliant API services.
+Authenticated, rate-limited API surface (`/infer`, `/stop`, `/health`) providing secure, cost-efficient, and audit-compliant API services.
 
 **API-001: API Skeleton & Test Harness**
 Context: Set project scaffolding for TDD-driven development and automated tests.
@@ -48,11 +48,11 @@ Acceptance Criteria:
 * CI validation step to assert log fields via AWS SDK stubs.
 * CloudWatch alarm triggers at p95 latency ≥300 ms over 5 minutes.
 
-**API-005: Health Check Route (`/ping`)**
+**API-005: Health Check Route (`/health`)**
 Context: Lightweight endpoint for automated uptime checks.
 Acceptance Criteria:
 
-* `GET /ping` responds with `{"status":"ok"}` within 100 ms.
+* `GET /health` responds with `{"status":"ok"}` within 100 ms.
 * Route is JWT-exempt, restricted to CIDR 10.20.0.0/22.
 * Terraform outputs URL usable by external health-checkers (e.g., Pingdom).
 * Synthetic CloudWatch canary test runs every minute.

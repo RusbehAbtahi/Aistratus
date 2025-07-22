@@ -3,7 +3,7 @@
 ## API – Secure Edge API Gateway
 
 **Outcome:**
-Expose a single, authenticated HTTP API surface (`/infer`, `/stop`, `/ping`) that blocks bad traffic, enforces cost-safe throttling, and produces audit-grade logs.
+Expose a single, authenticated HTTP API surface (`/infer`, `/stop`, `/health`) that blocks bad traffic, enforces cost-safe throttling, and produces audit-grade logs.
 
 ---
 
@@ -48,11 +48,11 @@ Context: Enable rapid troubleshooting through structured, machine-parseable logs
 * CI asserts log fields via AWS SDK stub.
 * p95 latency alarm (≥300 ms 5 min) created and enabled.
 
-**API-005: Health Check Route (`/ping`)**
+**API-005: Health Check Route (`/health`)**
 Context: Lightweight endpoint for automated uptime checks.
 **Acceptance Criteria:**
 
-* `GET /ping` returns `{"status":"ok"}` within 100 ms.
+* `GET /health` returns `{"status":"ok"}` within 100 ms.
 * Route is JWT-exempt, requires VPC-only source CIDR 10.20.0.0/22.
 * Terraform outputs URL for external health-checkers (e.g., Pingdom).
 * Synthetic test in CloudWatch Synthetics checks every minute.
@@ -305,7 +305,7 @@ Context: Ship routing fixes safely.
 * Post-unit stage zips router, publishes new version, shifts `prod` alias.
 * Previous five versions retained; rollback script documented.
 * Slack webhook posts deploy summary with X-Ray trace link.
-* Integration test hits `/ping` and expects status ok.
+* Integration test hits `/health` and expects status ok.
 * Document a clear rollback example script or GitHub Actions workflow snippet (docs/rollback_example.md) to ensure safe deployment.
 
 **CI-005: End-to-End Smoke Test**

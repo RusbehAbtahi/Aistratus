@@ -1,6 +1,6 @@
 ### API – Secure Edge API Gateway
 
-Outcome: Expose a single, authenticated HTTP surface (`/infer`, `/stop`, `/ping`) that blocks bad traffic early, enforces cost-safe throttling, and produces audit-grade logs.
+Outcome: Expose a single, authenticated HTTP surface (`/infer`, `/stop`, `/health`) that blocks bad traffic early, enforces cost-safe throttling, and produces audit-grade logs.
 
 **API-001  API Skeleton & Test Harness**
 Context: Set up repo folders, pytest infra, and a failing integration test to enforce TDD.
@@ -42,11 +42,11 @@ Acceptance Criteria
 * CI asserts log fields via AWS SDK stub
 * p95 latency alarm (≥300 ms 5 min) created and enabled
 
-**API-005  /ping Health Route**
+**API-005  /health Health Route**
 Context: Uptime monitors must verify the stack without burning GPU cost.
 Acceptance Criteria
 
-* `GET /ping` returns `{"status":"ok"}` in < 100 ms
+* `GET /health` returns `{"status":"ok"}` in < 100 ms
 * Route bypasses JWT but requires VPC-only source CIDR 10.20.0.0/22
 * Terraform output supplies synthetic Pingdom URL
 * Synthetic test in CloudWatch Synthetics checks every 1 min
@@ -273,7 +273,7 @@ Acceptance Criteria
 * Post-unit stage zips router, publishes new version, shifts `prod` alias
 * Previous five versions retained; rollback script documented
 * Slack webhook posts deploy summary with X-Ray trace link
-* Integration test hits `/ping` and expects status ok
+* Integration test hits `/health` and expects status ok
 
 **CI-005  End-to-End Smoke Test**
 Context: Guarantee the whole path works after every deploy.

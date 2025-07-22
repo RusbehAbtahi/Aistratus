@@ -21,3 +21,12 @@ variable "aws_region" {
   type        = string
   default     = "eu-central-1"
 }
+
+variable "shared_deps_layer_s3_key" {
+  description = "S3 key for the Lambda layer ZIP"
+  type        = string
+}
+variable "layer_bucket" {
+  description = "S3 bucket that stores Lambda layer ZIPs"
+  type        = string
+}

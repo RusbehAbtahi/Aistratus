@@ -118,13 +118,27 @@ def tf_apply() -> None:
 
 
 def lambda_rollback(version: str) -> None:
+    import subprocess, sys
+    FN = "tinyllama-router"
+    # verify version is numeric
     if not version.isdigit():
-        safe_print("ERROR: --version must be an integer (Lambda numeric version)")
+        print("ERROR: --version must be an integer (Lambda numeric version)")
         sys.exit(1)
-    if not ROLLBACK_SH.exists():
-        safe_print(f"ERROR: rollback script not found: {ROLLBACK_SH}")
-        sys.exit(1)
-    run(["bash", str(ROLLBACK_SH), version])
+    # call AWS CLI to update alias 'prod' to this version
+    cmd = [
+        "aws", "lambda", "update-alias",
+        "--function-name", FN,
+        "--name", "prod",
+        "--function-version", version,
+        "--region", "eu-central-1"
+    ]
+    print(f"[RUN] {' '.join(cmd)}")
+    proc = subprocess.Popen(cmd)
+    proc.communicate()
+    if proc.returncode:
+        sys.exit(proc.returncode)
+    print(f"Rolled back tinyllama-router to version {version}")
+
 
 # --------------------------------------------------------------------------- #
 # CLI

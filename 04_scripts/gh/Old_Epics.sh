@@ -19,7 +19,7 @@ gh label create story --description "Individual user story"      --color 7057FF 
 cat > /tmp/epic_api.md <<'EOF'
 **Epic Goal**
 
-Stand up a secure, well-documented HTTP API layer that exposes three routes—`/infer`, `/stop`, and `/ping`—behind Amazon API Gateway (HTTP API).  
+Stand up a secure, well-documented HTTP API layer that exposes three routes—`/infer`, `/stop`, and `/health`—behind Amazon API Gateway (HTTP API).  
 All requests must carry a valid JWT issued by Cognito; throttling protects back-end resources; structured access-logs land in CloudWatch.
 
 **Why this matters**
@@ -29,7 +29,7 @@ A rock-solid API surface gives front-end developers a stable target, lets DevOps
 
 **Success / Acceptance**
 
-1. A developer can run `curl -H "Authorization: Bearer <valid>" https://…/ping` and get `{"status":"ok"}`.  
+1. A developer can run `curl -H "Authorization: Bearer <valid>" https://…/health` and get `{"status":"ok"}`.  
 2. Invalid or missing JWT returns `401 Unauthorized` in < 150 ms.  
 3. Per-user throttle: 5 req/s bursts, 20 req/min sustained.  
 4. CORS permits `http://localhost:*` for the desktop GUI.  
@@ -67,7 +67,7 @@ Belongs to **Epic #${EPIC_ID}**
 **User Story**
 
 *As a front-end integrator*  
-I need a published OpenAPI 3 spec that declares `/infer`, `/stop`, and `/ping`
+I need a published OpenAPI 3 spec that declares `/infer`, `/stop`, and `/health`
 so I can generate type-safe client code and avoid guesswork.
 
 **Why it matters**

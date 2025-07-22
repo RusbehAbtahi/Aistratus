@@ -10,7 +10,7 @@ load_dotenv(find_dotenv(".env.dev"), override=False)
 
 class Settings(BaseSettings):
     COGNITO_USER_POOL_ID:  str
-    COGNITO_APP_CLIENT_ID: str
+    COGNITO_CLIENT_ID: str
     AWS_REGION:            str = "eu-central-1"  # default region
 
     model_config = SettingsConfigDict(
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     @property
     def client_id(self) -> str:
-        return self.COGNITO_APP_CLIENT_ID
+        return self.COGNITO_CLIENT_ID
 
     @property
     def issuer(self) -> str:
@@ -41,4 +41,4 @@ settings = Settings()
 
 # ── Override with values stored under /tinyllama/<env>/… ──
 settings.COGNITO_USER_POOL_ID  = get_id("cognito_user_pool_id")
-settings.COGNITO_APP_CLIENT_ID = get_id("cognito_client_id")
+settings.COGNITO_CLIENT_ID = get_id("cognito_client_id")

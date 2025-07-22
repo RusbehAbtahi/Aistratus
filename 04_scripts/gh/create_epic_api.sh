@@ -5,7 +5,7 @@ gh issue create -t "API-003 · Gateway Hardening & Per-User Throttling" -l "api,
 
 ### Context
 
-The public HTTP API (\`/infer\`, \`/stop\`, \`/ping\`) must enforce **Cognito-JWT authentication** and protect against abuse (GUI retry loops, script attacks). Past audits flagged two risks: (1) route settings can be overwritten by stage-level imports, and (2) API Gateway’s default logging obscures the client \`sub\`, making forensic work tedious.
+The public HTTP API (\`/infer\`, \`/stop\`, \`/health\`) must enforce **Cognito-JWT authentication** and protect against abuse (GUI retry loops, script attacks). Past audits flagged two risks: (1) route settings can be overwritten by stage-level imports, and (2) API Gateway’s default logging obscures the client \`sub\`, making forensic work tedious.
 
 ### Acceptance Criteria
 
@@ -40,7 +40,7 @@ The public HTTP API (\`/infer\`, \`/stop\`, \`/ping\`) must enforce **Cognito-JW
     throttling_burst_limit = 5
     throttling_rate_limit  = 20
   }
-  # repeat for /stop and /ping …
+  # repeat for /stop and /health …
   \`\`\`
 - **Authorizer** (\`modules/auth/cognito.tf\`) generates pool + app-client; output the issuer URL and JWKs URI for \`openapi.yaml\` security schema.
 - **Contract Tests**

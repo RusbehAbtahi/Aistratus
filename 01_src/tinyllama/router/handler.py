@@ -1,38 +1,60 @@
 import json
 import os
-from pydantic import ValidationError
-from tinyllama.utils.auth import verify_jwt
+
+# PyJWT exception types
+from jose.exceptions import ExpiredSignatureError, JWTError
+
+
+# Project helpers
+from tinyllama.utils.auth   import verify_jwt
 from tinyllama.utils.schema import PromptReq
 
-def lambda_handler(evt, ctx):
-    # ----- auth ------------------------------------------------------------
-    hdr = evt.get("headers", {}).get("authorization", "")
-    token = hdr.removeprefix("Bearer ").strip()
-    try:
-        verify_jwt(
-            token,
-            os.environ["COGNITO_ISSUER"],
-            os.environ["COGNITO_AUD"],
-        )
-    except Exception as exc:  # precise exception types already raised in auth.py
-        status = 401 if "token" in str(exc) else 403
-        return {
-            "statusCode": status,
-            "body": json.dumps({"error": str(exc)}),
-        }
 
-    # ----- body validation -------------------------------------------------
+def lambda_handler(event, context):
+    """AWS Lambda entry-point for TinyLlama Router v2 (LAM-001 scope)."""
+
+    # ------------------------------------------------------------------ body
     try:
-        body = PromptReq.model_validate_json(evt.get("body", ""))
-    except (ValidationError, json.JSONDecodeError) as exc:
+        body = PromptReq.model_validate_json(event.get("body", ""))
+    except Exception as exc:
         return {
             "statusCode": 400,
-            "body": json.dumps({"error": str(exc)}),
+            "body": json.dumps({"error": "invalid_request", "details": str(exc)}),
         }
 
-    # ----- happy path ------------------------------------------------------
-    # LAM-001 ends here – LAM-002 will enqueue
-    _ = body  # placeholder to avoid linter warning
+    # -------------------------------------------------------------- auth hdr
+    auth_header = event.get("headers", {}).get("authorization", "")
+    token = auth_header.removeprefix("Bearer ").strip()
+    if not token:
+        return {
+            "statusCode": 401,
+            "body": json.dumps({"error": "missing_token"}),
+        }
+
+    # ------------------------------------------------------------ jwt check
+    try:
+        verify_jwt(token)
+    except ExpiredSignatureError as exc:
+        print("DEBUG CAUGHT: ExpiredSignatureError:", exc)
+        return {
+            "statusCode": 401,
+            "body": json.dumps({"error": "token_expired"}),
+        }
+    except JWTError as exc:
+        print("DEBUG CAUGHT: JWTError:", exc)
+        return {
+            "statusCode": 403,
+            "body": json.dumps({"error": "invalid_token"}),
+        }
+    except Exception as exc:
+        print("DEBUG CAUGHT: General Exception:", type(exc), exc)
+        return {
+            "statusCode": 403,
+            "body": json.dumps({"error": "invalid_token"}),
+        }
+
+    # ----------------------------------------------------------- happy path
+    # (LAM-001 ends here – later epics will enqueue, etc.)
     return {
         "statusCode": 202,
         "body": json.dumps({"status": "queued"}),

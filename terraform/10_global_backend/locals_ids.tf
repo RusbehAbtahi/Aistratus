@@ -9,5 +9,6 @@ locals {
     vpc_id               = "${local.ssm_prefix}/vpc_id"
     public_subnet_ids    = "${local.ssm_prefix}/public_subnet_ids"
     private_subnet_ids   = "${local.ssm_prefix}/private_subnet_ids"
+    router_api_url       = "${local.ssm_prefix}/router_api_url"
   }
 }

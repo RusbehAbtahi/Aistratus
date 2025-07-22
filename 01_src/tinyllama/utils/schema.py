@@ -13,7 +13,7 @@ class PromptReq(BaseModel):
     prompt: str
     idle: int
 
-    @root_validator
+    @root_validator(skip_on_failure=True)
     def _validate(cls, values):
         prompt: str = values.get("prompt")
         idle: int = values.get("idle")

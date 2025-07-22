@@ -1,8 +1,3 @@
-module "layer" {
-  source          = "../lambda_layers"
-  env             = var.env
-  artifact_bucket = var.artifact_bucket
-}
 
 module "iam" {
   source = "../iam_router"
@@ -15,10 +10,12 @@ data "aws_ssm_parameter" "client" { name = "/tinyllama/${var.env}/cognito_client
 resource "aws_lambda_function" "router" {
   function_name = "tlfif-${var.env}-router"
   filename      = "${path.module}/../../../../../router.zip"
+  source_code_hash  = filebase64sha256("${path.module}/../../../../../router.zip")
+  publish           = true
   handler       = "tinyllama.router.handler.lambda_handler"
   runtime       = "python3.12"
   role          = module.iam.arn
-  layers        = [module.layer.arn]
+  layers        = [var.shared_deps_layer_arn]
   memory_size   = var.router_memory
   timeout       = var.router_timeout
   tracing_config { mode = "Active" }
