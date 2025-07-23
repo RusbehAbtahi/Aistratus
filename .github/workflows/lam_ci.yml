@@ -87,5 +87,6 @@ jobs:
           echo "TLFIF_ENV='$TLFIF_ENV'"
           cat .env_public
 
+
     - name: Terraform apply
-      run: python tools.py tf-apply -g
+      run: python tools.py tf-apply -g 
