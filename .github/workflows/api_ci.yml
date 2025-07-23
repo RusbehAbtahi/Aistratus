@@ -75,6 +75,14 @@ jobs:
       - name: Install Newman
         run: npm install -g newman
 
+      - name: Load API_BASE_URL from .env_public
+        run: |
+          if [ -f .env_public ]; then
+             VAL=$(grep -E '^API_BASE_URL=' .env_public | cut -d= -f2-)
+             echo "API_BASE_URL=$VAL" >> $GITHUB_ENV
+          fi
+
+
       - name: Run Postman collection
         run: |
           newman run 02_tests/api/postman/API-002.postman_collection.json \
