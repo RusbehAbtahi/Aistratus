@@ -3,8 +3,7 @@ name: Router Canary
 on:
   workflow_dispatch:
   push:
-    branches:
-      - feature/LAM-001-enable-router
+  pull_request:
   schedule:
     - cron: '*/5 * * * *'
 
