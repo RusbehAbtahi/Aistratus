@@ -106,7 +106,7 @@
         "cognito-idp:GetUserPoolMfaConfig",
         "cognito-idp:DescribeUserPoolClient"
       ],
-      "Resource": "arn:aws:cognito-idp:eu-central-1:108782059508:userpool/eu-central-1_FvUbA75NY"
+      "Resource": "arn:aws:cognito-idp:eu-central-1:108782059508:userpool/*"
     },
     {
       "Sid": "EC2Read",
@@ -208,7 +208,25 @@
         "logs:DescribeMetricFilters"
       ],
          "Resource": "*"
-  }
+  },
+
+  {
+        "Sid": "CognitoDescribeUserPool",
+        "Effect": "Allow",
+        "Action": [
+        "cognito-idp:DescribeUserPool"
+     ],
+         "Resource": "arn:aws:cognito-idp:eu-central-1:108782059508:userpool/*"
+  },
+  {
+        "Sid": "ApiGatewayGetApi",
+        "Effect": "Allow",
+        "Action": [
+        "apigateway:GET"
+     ],
+        "Resource": "arn:aws:apigateway:eu-central-1::/apis/*"
+   }
+
 
 
   ]

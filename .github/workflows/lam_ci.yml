@@ -77,5 +77,11 @@ jobs:
           s3://$ARTIFACT_BUCKET/layers/tlfif-$TLFIF_ENV-shared-deps.zip \
           --acl bucket-owner-full-control
 
+    - name: Debug env
+      run: |
+          echo "TF_VAR_env='$TF_VAR_env'"
+          echo "TLFIF_ENV='$TLFIF_ENV'"
+          cat .env_public
+
     - name: Terraform apply
       run: python tools.py tf-apply
