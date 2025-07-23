@@ -33,6 +33,13 @@ jobs:
     - name: Install dev deps
       run: pip install -r requirements.txt
 
+
+    - name: Configure AWS creds (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::108782059508:role/tlfif-github-actions-deployer
+        aws-region: ${{ env.AWS_REGION }}
+
     - name: Build shared_deps layer zip
       working-directory: 01_src/lambda_layers/shared_deps
       run: python build_layer_ci.py
@@ -51,11 +58,6 @@ jobs:
     - name: Run tests
       run: pytest -q
 
-    - name: Configure AWS creds (OIDC)
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: arn:aws:iam::108782059508:role/tlfif-github-actions-deployer
-        aws-region: ${{ env.AWS_REGION }}
 
 
     - name: Load variables from .env_public
