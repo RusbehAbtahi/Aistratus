@@ -72,6 +72,7 @@ jobs:
 
     - name: Upload shared_deps layer to S3
       run: |
+        ARTIFACT_BUCKET=$(echo "$ARTIFACT_BUCKET" | tr -d '[:space:]')
         aws s3 cp 01_src/lambda_layers/shared_deps/shared_deps.zip \
           s3://$ARTIFACT_BUCKET/layers/tlfif-$TLFIF_ENV-shared-deps.zip \
           --acl bucket-owner-full-control
