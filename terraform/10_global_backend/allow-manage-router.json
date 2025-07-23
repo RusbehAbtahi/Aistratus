@@ -1,0 +1,18 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowManageRouterAPI",
+      "Effect": "Allow",
+      "Action": [
+        "apigatewayv2:GetRoutes",
+        "apigatewayv2:DeleteRoute",
+        "apigatewayv2:UpdateStage"
+      ],
+      "Resource": [
+        "arn:aws:apigateway:eu-central-1::/apis/exubbfn15f/routes/*",
+        "arn:aws:apigateway:eu-central-1::/apis/exubbfn15f/stages/$default"
+      ]
+    }
+  ]
+}

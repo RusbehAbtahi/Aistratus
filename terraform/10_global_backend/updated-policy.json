@@ -1,0 +1,354 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SSMList",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeParameters",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SSMGet",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParameterHistory",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ssm:eu-central-1:108782059508:parameter/*"
+    },
+    {
+      "Sid": "IAMInspection",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:ListRolePolicies",
+        "iam:GetRolePolicy",
+        "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": [
+        "arn:aws:iam::108782059508:role/tlfif-default-router",
+        "arn:aws:iam::108782059508:role/tlfif-github-actions-deployer"
+      ]
+    },
+    {
+      "Sid": "S3StateBackend",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::tinnyllama-terraform-state"
+    },
+    {
+      "Sid": "S3StateBackendObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::tinnyllama-terraform-state/*"
+    },
+    {
+      "Sid": "ArtifactBucketList",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::tinyllama-data-108782059508"
+    },
+    {
+      "Sid": "ArtifactBucketObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::tinyllama-data-108782059508/layers/*"
+    },
+    {
+      "Sid": "ArtifactBucketTagging",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObjectTagging"
+      ],
+      "Resource": "arn:aws:s3:::tinyllama-data-108782059508/layers/*"
+    },
+    {
+      "Sid": "DynamoDBLocks",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:UpdateItem"
+      ],
+      "Resource": "arn:aws:dynamodb:eu-central-1:108782059508:table/terraform_locks"
+    },
+    {
+      "Sid": "OIDCProvider",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetOpenIDConnectProvider"
+      ],
+      "Resource": "arn:aws:iam::108782059508:oidc-provider/token.actions.githubusercontent.com"
+    },
+    {
+      "Sid": "CognitoRead",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:GetUserPoolMfaConfig",
+        "cognito-idp:DescribeUserPoolClient"
+      ],
+      "Resource": "arn:aws:cognito-idp:eu-central-1:108782059508:userpool/*"
+    },
+    {
+      "Sid": "EC2Read",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeVpcAttribute",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeRouteTables"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LambdaGetLayerVersion",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetLayerVersion"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-central-1:108782059508:layer:tlfif-default-shared-deps:*"
+      ]
+    },
+    {
+      "Sid": "LambdaGetFunction",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+      ]
+    },
+    {
+      "Sid": "LambdaListVersions",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:ListVersionsByFunction"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+      ]
+    },
+    {
+      "Sid": "LambdaGetFunctionCodeSigningConfig",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunctionCodeSigningConfig"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+      ]
+    },
+    {
+      "Sid": "CloudWatchDescribeAlarms",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DescribeAlarms"
+      ],
+      "Resource": "arn:aws:cloudwatch:eu-central-1:108782059508:alarm:*"
+    },
+    {
+      "Sid": "LambdaGetAlias",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetAlias"
+      ],
+      "Resource": "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+    },
+    {
+      "Sid": "LogsDescribeLogGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+       "Sid": "CloudWatchListTagsForResource",
+       "Effect": "Allow",
+       "Action": [
+       "cloudwatch:ListTagsForResource"
+     ],
+       "Resource": "arn:aws:cloudwatch:eu-central-1:108782059508:alarm:*"
+   },
+   {
+       "Sid": "LogsListTagsForResource",
+       "Effect": "Allow",
+       "Action": [
+       "logs:ListTagsForResource"
+      ],
+       "Resource": "*"
+   },
+   {
+        "Sid": "LogsDescribeMetricFilters",
+        "Effect": "Allow",
+         "Action": [
+        "logs:DescribeMetricFilters"
+      ],
+         "Resource": "*"
+  },
+
+  {
+        "Sid": "CognitoDescribeUserPool",
+        "Effect": "Allow",
+        "Action": [
+        "cognito-idp:DescribeUserPool"
+     ],
+         "Resource": "arn:aws:cognito-idp:eu-central-1:108782059508:userpool/*"
+  },
+  {
+        "Sid": "ApiGatewayGetApi",
+        "Effect": "Allow",
+        "Action": [
+        "apigateway:GET"
+     ],
+        "Resource": "arn:aws:apigateway:eu-central-1::/apis/*"
+   },
+   {
+        "Sid": "LambdaGetPolicyWildcard",
+        "Effect": "Allow",
+        "Action": [
+        "lambda:GetPolicy"
+      ],
+        "Resource": "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router:*"
+    },
+    {
+        "Sid": "IamPutRolePolicy",
+        "Effect": "Allow",
+        "Action": [
+        "iam:PutRolePolicy"
+     ],
+        "Resource": "arn:aws:iam::108782059508:role/tlfif-github-actions-deployer"
+  },
+  {
+         "Sid": "SsmAddTagsToResource",
+         "Effect": "Allow",
+          "Action": [
+           "ssm:AddTagsToResource"
+      ],
+          "Resource": "arn:aws:ssm:eu-central-1:108782059508:parameter/tinyllama/default/router_api_url"
+  },
+  {
+           "Sid": "ApiGatewayPatchStage",
+            "Effect": "Allow",
+             "Action": [
+            "apigateway:PATCH"
+     ],
+            "Resource": "arn:aws:apigateway:eu-central-1::/apis/rjg3dvt5el/stages/$default"
+   },
+
+   {
+            "Sid": "LogsCreateLogDelivery",
+            "Effect": "Allow",
+            "Action": [
+            "logs:CreateLogDelivery"
+     ],
+             "Resource": "*"
+   }, 
+   {
+            "Sid": "LambdaUpdateFunctionCode",
+            "Effect": "Allow",
+            "Action": [
+            "lambda:UpdateFunctionCode"
+     ],
+           "Resource": "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+   },
+
+  {
+             "Sid": "LogsListLogDeliveries",
+             "Effect": "Allow",
+             "Action": [
+             "logs:ListLogDeliveries"
+         ],
+             "Resource": "*"
+  },
+  {
+             "Sid": "LambdaPublishVersion",
+             "Effect": "Allow",
+             "Action": [
+             "lambda:PublishVersion"
+         ],
+              "Resource": "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+    },
+    {
+              "Sid": "LogsGetLogDelivery",
+               "Effect": "Allow",
+               "Action": [
+               "logs:GetLogDelivery"
+       ],
+              "Resource": "*"
+    },
+   {
+              "Sid": "LambdaGetFunctionConfiguration",
+              "Effect": "Allow",
+              "Action": [
+              "lambda:GetFunctionConfiguration"
+     ],
+              "Resource": "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router:*"
+   },
+   {
+             "Sid": "LogsUpdateLogDelivery",
+             "Effect": "Allow",
+             "Action": [
+            "logs:UpdateLogDelivery"
+     ],
+             "Resource": "*"
+   }, 
+   {
+            "Sid": "LambdaUpdateAlias",
+            "Effect": "Allow",
+            "Action": [
+             "lambda:UpdateAlias"
+     ],
+              "Resource": "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+     },
+    {
+             "Sid": "S3MultipartUploads",
+             "Effect": "Allow",
+             "Action": [
+             "s3:CreateMultipartUpload",
+             "s3:ListMultipartUploadParts",
+             "s3:CompleteMultipartUpload",
+             "s3:AbortMultipartUpload"
+       ],
+             "Resource": "arn:aws:s3:::tinyllama-data-108782059508/layers/*"
+     },
+     {
+             "Sid": "LambdaAddRemovePermission",
+              "Effect": "Allow",
+              "Action": [
+              "lambda:AddPermission",
+              "lambda:RemovePermission"
+    ],
+              "Resource": "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+}
+
+
+
+
+
+
+  ]
+}

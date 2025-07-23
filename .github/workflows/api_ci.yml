@@ -5,15 +5,9 @@ name: API – FastAPI + JWT CI
 # ─────────────────────────────────────────────────────────────
 on:
   push:
-    paths:
-      - "api/**"
-      - "02_tests/api/**"
-      - ".github/workflows/api_ci.yml"
-      - "requirements.txt"
-  pull_request:
-    paths:
-      - "api/**"
-      - "02_tests/api/**"
+    branches: [ "**" ]
+  pull_request: {}
+
 
 # ─────────────────────────────────────────────────────────────
 # GitHub → AWS OIDC permission (MUST be here)
@@ -32,7 +26,7 @@ jobs:
     env:
       AWS_DEFAULT_REGION: eu-central-1      # <-- you already had this
       COGNITO_USER_POOL_ID:  ${{ secrets.COGNITO_USER_POOL_ID }}
-      COGNITO_APP_CLIENT_ID: ${{ secrets.COGNITO_APP_CLIENT_ID }}
+      COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
       API_BASE_URL:          ${{ secrets.API_BASE_URL }}
       LOCAL_JWKS_PATH:       ${{ github.workspace }}/02_tests/api/data/mock_jwks.json
 
@@ -80,6 +74,14 @@ jobs:
 
       - name: Install Newman
         run: npm install -g newman
+
+      - name: Load API_BASE_URL from .env_public
+        run: |
+          if [ -f .env_public ]; then
+             VAL=$(grep -E '^API_BASE_URL=' .env_public | cut -d= -f2-)
+             echo "API_BASE_URL=$VAL" >> $GITHUB_ENV
+          fi
+
 
       - name: Run Postman collection
         run: |

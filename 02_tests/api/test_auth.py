@@ -17,5 +17,6 @@ CASES = [
 
 @pytest.mark.parametrize("hdr,status", CASES)
 def test_jwt_paths(hdr, status):
+    print("DEBUG TEST hdr:", hdr)
     resp = client.post("/infer", headers=hdr or {})
     assert resp.status_code == status

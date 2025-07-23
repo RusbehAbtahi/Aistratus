@@ -8,7 +8,7 @@ I will continue with Epics 3-7 in subsequent messages.
 
 ### Context
 
-The public HTTP API (`/infer`, `/stop`, `/ping`) must enforce **Cognito-JWT authentication** and protect against abuse (GUI retry loops, script attacks). Past audits flagged two risks: (1) route settings can be overwritten by stage-level imports, and (2) API Gateway’s default logging obscures the client `sub`, making forensic work tedious.
+The public HTTP API (`/infer`, `/stop`, `/health`) must enforce **Cognito-JWT authentication** and protect against abuse (GUI retry loops, script attacks). Past audits flagged two risks: (1) route settings can be overwritten by stage-level imports, and (2) API Gateway’s default logging obscures the client `sub`, making forensic work tedious.
 
 ### Acceptance Criteria
 
@@ -53,7 +53,7 @@ The public HTTP API (`/infer`, `/stop`, `/ping`) must enforce **Cognito-JWT auth
     throttling_burst_limit = 5
     throttling_rate_limit  = 20
   }
-  # repeat for /stop and /ping …
+  # repeat for /stop and /health …
   ```
 
 * **Authorizer** (`modules/auth/cognito.tf`) generates pool + app-client; output the issuer URL and JWKs URI for `openapi.yaml` security schema.
@@ -217,7 +217,7 @@ Three tickets (LAM-001 … 003) are now fleshed out to the same depth as the API
 4. **Rollback**
 
    * `make lambda-rollback VERSION=$PREV` script documented; RUNBOOK section added to `docs/ops/lambda_router.md`.
-   * GitHub Action `router_canary.yml` hits `/ping` every 5 min; two failures trigger auto-rollback via `aws lambda update-alias --function-name tinyllama-router --name prod --function-version $PREV`.
+   * GitHub Action `router_canary.yml` hits `/health` every 5 min; two failures trigger auto-rollback via `aws lambda update-alias --function-name tinyllama-router --name prod --function-version $PREV`.
 
 5. **Tests** (CI job `lam_router_spec`)
 
@@ -240,7 +240,7 @@ Three tickets (LAM-001 … 003) are now fleshed out to the same depth as the API
       variables = {
         TL_DISABLE_LAM_ROUTER = "0"
         COGNITO_ISSUER        = var.cognito_issuer
-        COGNITO_AUD           = var.cognito_app_client_id
+        COGNITO_AUD           = var.COGNITO_CLIENT_ID
       }
     }
     layers = [aws_lambda_layer_version.shared_deps.arn]
@@ -342,7 +342,7 @@ If the GPU EC2 instance (`EC2-001`) is **stopped**, Router must start it and imm
 
    * When a cold start is triggered, Router returns **202**
      `{"status":"starting","eta":90}` and header `X-GPU-ColdBoot:true`.
-   * GUI must poll `/ping` until 200.
+   * GUI must poll `/health` until 200.
 
 3. **Metrics**
 

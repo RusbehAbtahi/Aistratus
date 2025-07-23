@@ -1,0 +1,5 @@
+bucket = "tinyllama-terraform-state"
+key    = "global/terraform.tfstate"
+region = "eu-central-1"
+shared_deps_layer_s3_key = "layers/shared_deps_20250722-163252.zip"
+layer_bucket = "lambda-layer-zip-108782059508"

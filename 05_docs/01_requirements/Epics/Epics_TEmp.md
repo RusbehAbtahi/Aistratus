@@ -8,7 +8,7 @@ Every step is single-path, cost-aware, and immediately actionable by a solo deve
 
 | Key     | Scope                                                                               | Cost impact |
 | ------- | ----------------------------------------------------------------------------------- | ----------- |
-| API-201 | Harden `/infer`, `/stop`, `/ping` routes behind Cognito JWT and per-user throttling | < €0.50/mo  |
+| API-201 | Harden `/infer`, `/stop`, `/health` routes behind Cognito JWT and per-user throttling | < €0.50/mo  |
 | API-202 | Add CORS & structured JSON access logging                                           | negligible  |
 | API-203 | Wire GUI login button → Cognito OAuth flow                                          | —           |
 
@@ -26,7 +26,7 @@ Every step is single-path, cost-aware, and immediately actionable by a solo deve
      identity_sources = ["$request.header.Authorization"]
      name            = "cognito-jwt"
      jwt_configuration {
-       audience = [var.cognito_app_client_id]
+       audience = [var.COGNITO_CLIENT_ID]
        issuer   = var.cognito_issuer
      }
    }
@@ -263,7 +263,7 @@ Update `.github/workflows/ci.yml` to:
 
 ### CI-703 · Smoke test
 
-`curl -s https://$API/ping` → 200, then `/infer` with dummy prompt → 202 in ≤ 120 s.
+`curl -s https://$API/health` → 200, then `/infer` with dummy prompt → 202 in ≤ 120 s.
 
 ---
 

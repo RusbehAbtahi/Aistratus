@@ -113,3 +113,30 @@ venv_tinyllama/
 *.pyc
 __pycache__/
 .env.dev
+
+
+# large or local-only stuff
+*.zip
+.venv/
+AWSCLIV2-*.zip
+router.zip
+*.lnk
+
+
+
+# local / big:
+*.zip
+.venv/
+04_scripts/no_priv/
+*.lnk
+
+router.zip
+01_src/lambda_layers/shared_deps/shared_deps.zip
+
+# legacy / scratch terraform
+terraform/maintf_old/
+terraform/10_global_backend/all_tf_files.txt
+
+/10-Archive/
+/01_src/lambda_layers/shared_deps/python/
+/01_src/lambda_layers/shared_deps/shared_deps.zip

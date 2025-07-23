@@ -34,7 +34,7 @@ from .jwt_tools import make_token                    # already creates key & JWK
 from tinyllama.utils.ssm import get_id
 
 # replace env lookups with SSM lookups:
-COGNITO_APP_CLIENT_ID = get_id("cognito_client_id")
+COGNITO_CLIENT_ID = get_id("cognito_client_id")
 AWS_REGION            = os.getenv("AWS_REGION", "eu-central-1")
 COGNITO_ISSUER        = f"https://cognito-idp.{AWS_REGION}.amazonaws.com/{get_id('cognito_user_pool_id')}"
 
@@ -45,6 +45,9 @@ _cached_jwks: Dict[str, Dict[str, Any]] = {}          # kid → jwk entry
 
 def _load_jwks() -> Dict[str, Dict[str, Any]]:
     """Load JWKS either from local file (tests) or from the Cognito URL."""
+    print("DEBUG JWKS PATH:", _LOCAL_JWKS_PATH)
+    print("DEBUG JWKS FILE EXISTS:", _LOCAL_JWKS_PATH.is_file())
+
     if _LOCAL_JWKS_PATH.is_file():
         data = json.loads(_LOCAL_JWKS_PATH.read_text())
     else:
@@ -52,6 +55,7 @@ def _load_jwks() -> Dict[str, Dict[str, Any]]:
         resp = requests.get(f"{COGNITO_ISSUER}/.well-known/jwks.json", timeout=5)
         resp.raise_for_status()
         data = resp.json()
+    print("DEBUG JWKS KEYS:", [k['kid'] for k in data['keys']])
 
     return {key["kid"]: key for key in data["keys"]}
 
@@ -85,13 +89,14 @@ def verify_jwt(token: str) -> Dict[str, Any]:
     jwk_entry = _cached_jwks.get(kid)
     if jwk_entry is None:
         raise JWTError("Unknown kid")
-
+    print("DEBUG VERIFY_JWT expects audience:", COGNITO_CLIENT_ID)
+    print("DEBUG VERIFY_JWT expects issuer:", COGNITO_ISSUER)
     # Decode
     return jwt.decode(
         token,
         jwk.construct(jwk_entry),
         algorithms=["RS256"],
-        audience=COGNITO_APP_CLIENT_ID,
+        audience=COGNITO_CLIENT_ID,
         issuer=COGNITO_ISSUER,
     )
 

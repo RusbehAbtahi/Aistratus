@@ -28,7 +28,7 @@ updated: "2025‑06‑13"
 
 | Key         | Scope                                                                      | Cost          |
 | ----------- | -------------------------------------------------------------------------- | ------------- |
-| **API‑003** | Harden `/infer`, `/stop`, `/ping` behind Cognito JWT & per‑user throttling | 💸 < €0.50/mo |
+| **API‑003** | Harden `/infer`, `/stop`, `/health` behind Cognito JWT & per‑user throttling | 💸 < €0.50/mo |
 | **API‑004** | CORS + structured JSON access logging                                      | negligible    |
 | **API‑005** | GUI login button → Cognito OAuth flow                                      | —             |
 

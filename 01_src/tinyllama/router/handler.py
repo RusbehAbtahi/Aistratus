@@ -1,35 +1,61 @@
-import os, json, uuid
-from http import HTTPStatus
-from tinyllama.utils.auth import verify_jwt   # shared helper
+import json
+import os
 
-_DISABLED = os.getenv("TL_DISABLE_LAM_ROUTER", "1") == "1"
+# PyJWT exception types
+from jose.exceptions import ExpiredSignatureError, JWTError
 
-def _resp(code, body):
-    return {"statusCode": code.value, "body": json.dumps(body)}
 
-def handler(event, _ctx):
-    if _DISABLED:
-        return _resp(HTTPStatus.SERVICE_UNAVAILABLE,
-                     {"error": "Router disabled (LAM-001 phase)"})
+# Project helpers
+from tinyllama.utils.auth   import verify_jwt
+from tinyllama.utils.schema import PromptReq
 
-    # JWT --------------------------------------------------------------
-    auth = event.get("headers", {}).get("Authorization", "")
+
+def lambda_handler(event, context):
+    """AWS Lambda entry-point for TinyLlama Router v2 (LAM-001 scope)."""
+
+    # ------------------------------------------------------------------ body
     try:
-        scheme, token = auth.split()
-        assert scheme.lower() == "bearer"
+        body = PromptReq.model_validate_json(event.get("body", ""))
+    except Exception as exc:
+        return {
+            "statusCode": 400,
+            "body": json.dumps({"error": "invalid_request", "details": str(exc)}),
+        }
+
+    # -------------------------------------------------------------- auth hdr
+    auth_header = event.get("headers", {}).get("authorization", "")
+    token = auth_header.removeprefix("Bearer ").strip()
+    if not token:
+        return {
+            "statusCode": 401,
+            "body": json.dumps({"error": "missing_token"}),
+        }
+
+    # ------------------------------------------------------------ jwt check
+    try:
         verify_jwt(token)
-    except Exception:
-        return _resp(HTTPStatus.UNAUTHORIZED, {"error": "JWT missing/invalid"})
+    except ExpiredSignatureError as exc:
+        print("DEBUG CAUGHT: ExpiredSignatureError:", exc)
+        return {
+            "statusCode": 401,
+            "body": json.dumps({"error": "token_expired"}),
+        }
+    except JWTError as exc:
+        print("DEBUG CAUGHT: JWTError:", exc)
+        return {
+            "statusCode": 403,
+            "body": json.dumps({"error": "invalid_token"}),
+        }
+    except Exception as exc:
+        print("DEBUG CAUGHT: General Exception:", type(exc), exc)
+        return {
+            "statusCode": 403,
+            "body": json.dumps({"error": "invalid_token"}),
+        }
 
-    # Body -------------------------------------------------------------
-    try:
-        body = json.loads(event.get("body") or "{}")
-        prompt = body["prompt"]
-    except (KeyError, json.JSONDecodeError):
-        return _resp(HTTPStatus.BAD_REQUEST, {"error": "Invalid JSON or prompt"})
-    if not isinstance(prompt, str) or len(prompt) > 6_000:
-        return _resp(HTTPStatus.BAD_REQUEST, {"error": "Prompt too large"})
-
-    # Placeholder until Redis / EC2 logic (LAM-003/004)
-    return _resp(HTTPStatus.ACCEPTED,
-                 {"status": "queued", "id": str(uuid.uuid4())})
+    # ----------------------------------------------------------- happy path
+    # (LAM-001 ends here – later epics will enqueue, etc.)
+    return {
+        "statusCode": 202,
+        "body": json.dumps({"status": "queued"}),
+    }

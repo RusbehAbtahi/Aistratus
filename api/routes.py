@@ -8,7 +8,7 @@ app = FastAPI(
     docs_url="/docs", redoc_url="/redoc",
 )
 
-@app.get("/ping")
+@app.get("/health")
 async def ping():
     return {"status": "ok"}
 

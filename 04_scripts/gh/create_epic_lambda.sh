@@ -24,7 +24,7 @@ gh issue create -t "LAM-001 · Enable Router & Real JWT / Body Validation" -l "l
    - Validation performed via \`pydantic\` model; code coverage ≥ 95% on model/handler.
 4. **Rollback**
    - \`make lambda-rollback VERSION=\$PREV\` script documented; RUNBOOK section added to \`docs/ops/lambda_router.md\`.
-   - GitHub Action \`router_canary.yml\` hits \`/ping\` every 5 min; two failures trigger auto-rollback via \`aws lambda update-alias --function-name tinyllama-router --name prod --function-version \$PREV\`.
+   - GitHub Action \`router_canary.yml\` hits \`/health\` every 5 min; two failures trigger auto-rollback via \`aws lambda update-alias --function-name tinyllama-router --name prod --function-version \$PREV\`.
 5. **Tests** (CI job \`lam_router_spec\`)
    - Unit tests: happy path, >6 kB prompt, idle=0, tampered JWT.
    - Contract test runs \`sam local invoke\` with Docker to ensure env var wired.
@@ -44,7 +44,7 @@ gh issue create -t "LAM-001 · Enable Router & Real JWT / Body Validation" -l "l
       variables = {
         TL_DISABLE_LAM_ROUTER = \"0\"
         COGNITO_ISSUER        = var.cognito_issuer
-        COGNITO_AUD           = var.cognito_app_client_id
+        COGNITO_AUD           = var.COGNITO_CLIENT_ID
       }
     }
     layers = [aws_lambda_layer_version.shared_deps.arn]
@@ -127,7 +127,7 @@ If the GPU EC2 instance (see EC2-001) is **stopped**, Router must start it and i
    - If state \`pending|running\` → skip start.
 2. **Immediate Response**
    - When a cold start is triggered, Router returns **202** \`{\"status\":\"starting\",\"eta\":90}\` and header \`X-GPU-ColdBoot:true\`.
-   - GUI must poll \`/ping\` until 200.
+   - GUI must poll \`/health\` until 200.
 3. **Metrics**
    - \`EC2Starts\` (Dim:Reason=ColdBoot) \`PutMetricData\` on every start.
    - p95 start_instances API latency ≤ 400 ms.

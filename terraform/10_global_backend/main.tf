@@ -1,11 +1,6 @@
-###############################################
-# 10_global_backend/main.tf
-# — root configuration
-###############################################
-
-provider "aws" {
-  region = "eu-central-1"
-}
+###############################################################################
+# 10_global_backend / main.tf – definitive root configuration (LAM-001)      #
+###############################################################################
 
 terraform {
   required_version = ">= 1.6"
@@ -13,36 +8,88 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 6.0.0"   # stay on 6.0.x, do not upgrade to 6.1+
+      version = "~> 6.0.0"
     }
   }
 }
 
-# ─────────────────────────────────────────────
-# Modules
-# ─────────────────────────────────────────────
-module "networking" {
-  source         = "./modules/networking"
-  vpc_cidr       = "10.20.0.0/22"
-  enable_nat_gw  = false         # ← this single line turns the NAT-GW ON
+provider "aws" {
+  region = "eu-central-1"
 }
 
+################################################################################
+# Core infrastructure                                                          #
+################################################################################
+
+module "networking" {
+  source        = "./modules/core/networking"
+  vpc_cidr      = "10.20.0.0/22"
+  enable_nat_gw = false
+}
 
 module "auth" {
-  source = "./modules/auth"
+  source = "./modules/core/auth"
 }
 
-# WHY
-#   Glue – passes IDs + env to the writer module.
-# WHERE
-#   At the bottom of 10_global_backend/main.tf
-# HOW
-#   git add, terraform plan.
-
 module "ssm_params" {
-  source = "./modules/ssm_params"
-
+  source        = "./modules/core/ssm_params"
   env           = var.env
   ids           = local.ids
-  global_values = local.global_ids       # refers to the output above
+  global_values = local.global_ids
+}
+
+################################################################################
+# Services                                                                     #
+################################################################################
+
+module "lambda_layers" {
+  source          = "./modules/services/lambda_layers"
+  env             = var.env
+  artifact_bucket = var.artifact_bucket
+  shared_deps_layer_s3_key = var.shared_deps_layer_s3_key
+  layer_bucket              = var.layer_bucket  
+}
+
+module "iam_router" {
+  source = "./modules/services/iam_router"
+  env    = var.env
+}
+
+module "compute" {
+  source          = "./modules/services/compute"
+  env             = var.env
+  artifact_bucket = var.artifact_bucket
+  router_memory   = var.router_memory
+  router_timeout  = var.router_timeout
+  aws_region      = var.aws_region
+  shared_deps_layer_arn = module.lambda_layers.arn
+  depends_on = [module.ssm_params]
+}
+
+
+################################################################################
+# Observability                                                                #
+################################################################################
+
+module "monitoring" {
+  source               = "./modules/observability/monitoring"
+  router_function_name = module.compute.router_function_name
+  log_group_name       = module.compute.log_group_name
+}
+
+# ──────────────────────────────────────────────────────────────
+# Resolve the Lambda *invoke ARN* once, so API Gateway receives
+# a fully-qualified arn:aws:lambda:…:function/<name>:<version>/invocations
+# ──────────────────────────────────────────────────────────────
+#data "aws_lambda_function" "router" {
+#  function_name = module.compute.router_function_name   # <- already output by compute module
+#}
+
+
+module "apigateway" {
+  source              = "./modules/services/apigateway"
+  env                 = var.env
+  aws_region          = var.aws_region
+  router_lambda_arn  = module.compute.router_invoke_arn
+  router_lambda_name  = module.compute.router_function_name
 }

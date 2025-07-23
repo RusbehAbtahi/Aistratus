@@ -1,0 +1,90 @@
+name: TinyLlama CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  AWS_REGION: eu-central-1
+  AWS_DEFAULT_REGION: eu-central-1
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    permissions: { id-token: write, contents: read }
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Terraform
+      uses: hashicorp/setup-terraform@v1
+      with:
+        terraform_version: "1.8.5"
+
+    - name: Check Terraform path
+      run: which terraform && terraform version
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install dev deps
+      run: pip install -r requirements.txt
+
+    - name: Configure AWS creds (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::108782059508:role/tlfif-github-actions-deployer
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Build shared_deps layer zip
+      working-directory: 01_src/lambda_layers/shared_deps
+      run: python build_layer_ci.py
+
+    - name: Build router.zip
+      run: python tools.py lambda-package
+
+    - name: Run tests
+      env:
+        COGNITO_USER_POOL_ID: eu-central-1_TEST
+        COGNITO_CLIENT_ID: local-test-client-id
+        AWS_ACCESS_KEY_ID: test
+        AWS_SECRET_ACCESS_KEY: test
+        AWS_SESSION_TOKEN: test
+      run: pytest -q
+
+    - name: Load variables from .env_public
+      shell: bash
+      run: |
+        set -a
+        source .env_public
+        set +a
+        TLFIF_ENV=$(echo "$TLFIF_ENV" | tr -d '[:space:]')
+        ARTIFACT_BUCKET=$(echo "$ARTIFACT_BUCKET" | tr -d '[:space:]')
+        echo "TF_VAR_env=${TLFIF_ENV}"             >> $GITHUB_ENV
+        echo "TF_VAR_artifact_bucket=${ARTIFACT_BUCKET}" >> $GITHUB_ENV
+        echo "TLFIF_ENV=${TLFIF_ENV}"              >> $GITHUB_ENV
+        echo "ARTIFACT_BUCKET=${ARTIFACT_BUCKET}"  >> $GITHUB_ENV
+
+    - name: Configure AWS Credentials for deploy
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: eu-central-1
+
+    - name: Upload shared_deps layer to S3
+      run: |
+        ARTIFACT_BUCKET=$(echo "$ARTIFACT_BUCKET" | tr -d '[:space:]')
+        aws s3 cp 01_src/lambda_layers/shared_deps/shared_deps.zip \
+          s3://$ARTIFACT_BUCKET/layers/tlfif-$TLFIF_ENV-shared-deps.zip \
+          --acl bucket-owner-full-control
+
+    - name: Debug env
+      run: |
+        echo "TF_VAR_env='$TF_VAR_env'"
+        echo "TLFIF_ENV='$TLFIF_ENV'"
+        cat .env_public
+
+    - name: Terraform apply
+      run: python tools.py tf-apply -g

@@ -1,0 +1,52 @@
+name: Router Canary
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/LAM-001-enable-router
+  schedule:
+    - cron: '*/5 * * * *'
+
+jobs:
+  ping-and-rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: "1.8.5"
+
+      - name: Check Terraform path
+        run: which terraform && terraform version
+
+      - name: Curl /health
+        id: ping
+        run: |
+          set -e
+          URL="https://5pk2sd4jl3.execute-api.eu-central-1.amazonaws.com/health"
+          echo "Pinging: $URL"
+          if ! curl -v -sSf -m 5 "$URL"; then
+            echo "::set-output name=failed::true"
+            echo "Ping FAILED"
+          else
+            echo "::set-output name=failed::false"
+            echo "Ping SUCCESS"
+          fi
+
+      - name: Count consecutive failures
+        id: counter
+        run: |
+          PREV=${{ steps.ping.outputs.failed }}
+          COUNT=$(gh run view --json conclusion --limit 2 \
+            | jq '[.[] | select(.conclusion!="success")] | length')
+          echo "::set-output name=count::$COUNT"
+
+      - name: Roll back if needed
+        if: steps.counter.outputs.count == '2'
+        run: |
+          echo "Two canary failures in a row; rolling back..."
+          python tools.py lambda-rollback --version $(python tools.py --version-from-terraform)
