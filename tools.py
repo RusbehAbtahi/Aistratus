@@ -115,7 +115,7 @@ def tf_apply() -> None:
     run(init_cmd, cwd=TERRAFORM_DIR)
     run([tf, "apply", "-auto-approve"], cwd=TERRAFORM_DIR)
     safe_print("OK   : terraform apply finished")
-
+    update_env_public_with_api_url()
 
 def lambda_rollback(version: str) -> None:
     import subprocess, sys
@@ -139,6 +139,34 @@ def lambda_rollback(version: str) -> None:
         sys.exit(proc.returncode)
     print(f"Rolled back tinyllama-router to version {version}")
 
+def update_env_public_with_api_url():
+    import json
+    import subprocess
+
+    tf_output_cmd = [
+        terraform_bin(), "output", "-json"
+    ]
+    proc = subprocess.run(
+        tf_output_cmd,
+        cwd=TERRAFORM_DIR,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    outputs = json.loads(proc.stdout)
+    # Extract router_api_url from inside global_ids
+    api_url = outputs["global_ids"]["value"]["router_api_url"]
+
+    env_path = REPO_ROOT / ".env_public"
+    lines = []
+    if env_path.exists():
+        with open(env_path, "r") as f:
+            lines = f.readlines()
+    lines = [l for l in lines if not l.startswith("API_BASE_URL=")]
+    lines.append(f"API_BASE_URL={api_url}\n")
+    with open(env_path, "w") as f:
+        f.writelines(lines)
+    print(f"OK   : .env_public updated with API_BASE_URL={api_url}")
 
 # --------------------------------------------------------------------------- #
 # CLI
