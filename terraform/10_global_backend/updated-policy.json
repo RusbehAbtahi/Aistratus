@@ -323,7 +323,29 @@
              "lambda:UpdateAlias"
      ],
               "Resource": "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
+     },
+    {
+             "Sid": "S3MultipartUploads",
+             "Effect": "Allow",
+             "Action": [
+             "s3:CreateMultipartUpload",
+             "s3:ListMultipartUploadParts",
+             "s3:CompleteMultipartUpload",
+             "s3:AbortMultipartUpload"
+       ],
+             "Resource": "arn:aws:s3:::tinyllama-data-108782059508/layers/*"
+     },
+     {
+             "Sid": "LambdaAddRemovePermission",
+              "Effect": "Allow",
+              "Action": [
+              "lambda:AddPermission",
+              "lambda:RemovePermission"
+    ],
+              "Resource": "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
 }
+
+
 
 
 
