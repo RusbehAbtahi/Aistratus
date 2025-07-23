@@ -57,18 +57,20 @@ jobs:
         role-to-assume: arn:aws:iam::108782059508:role/tlfif-github-actions-deployer
         aws-region: ${{ env.AWS_REGION }}
 
+
     - name: Load variables from .env_public
-      shell: bash
-      run: |
-        set -a
-        source .env_public
-        set +a
-        # Terraform needs these:
-        echo "TF_VAR_env=${TLFIF_ENV}"             >> $GITHUB_ENV
-        echo "TF_VAR_artifact_bucket=${ARTIFACT_BUCKET}" >> $GITHUB_ENV
-        # Shell (S3 upload) needs these too:
-        echo "TLFIF_ENV=${TLFIF_ENV}"              >> $GITHUB_ENV
-        echo "ARTIFACT_BUCKET=${ARTIFACT_BUCKET}"  >> $GITHUB_ENV
+       shell: bash
+       run: |
+       set -a
+       source .env_public
+       set +a
+       TLFIF_ENV=$(echo "$TLFIF_ENV" | tr -d '[:space:]')
+       ARTIFACT_BUCKET=$(echo "$ARTIFACT_BUCKET" | tr -d '[:space:]')
+       echo "TF_VAR_env=${TLFIF_ENV}"             >> $GITHUB_ENV
+       echo "TF_VAR_artifact_bucket=${ARTIFACT_BUCKET}" >> $GITHUB_ENV
+       echo "TLFIF_ENV=${TLFIF_ENV}"              >> $GITHUB_ENV
+       echo "ARTIFACT_BUCKET=${ARTIFACT_BUCKET}"  >> $GITHUB_ENV
+
 
     - name: Upload shared_deps layer to S3
       run: |
