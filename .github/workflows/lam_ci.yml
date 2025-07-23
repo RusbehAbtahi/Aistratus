@@ -33,7 +33,6 @@ jobs:
     - name: Install dev deps
       run: pip install -r requirements.txt
 
-
     - name: Configure AWS creds (OIDC)
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -47,32 +46,33 @@ jobs:
     - name: Build router.zip
       run: python tools.py lambda-package
 
-    - name: Set required env vars for pytest
-      run: |
-        echo 'COGNITO_USER_POOL_ID=eu-central-1_TEST'    >> "${GITHUB_ENV}"
-        echo 'COGNITO_CLIENT_ID=local-test-client-id'    >> "${GITHUB_ENV}"
-        echo 'AWS_ACCESS_KEY_ID=test'                    >> "${GITHUB_ENV}"
-        echo 'AWS_SECRET_ACCESS_KEY=test'                >> "${GITHUB_ENV}"
-        echo 'AWS_SESSION_TOKEN=test'                    >> "${GITHUB_ENV}"
-
     - name: Run tests
+      env:
+        COGNITO_USER_POOL_ID: eu-central-1_TEST
+        COGNITO_CLIENT_ID: local-test-client-id
+        AWS_ACCESS_KEY_ID: test
+        AWS_SECRET_ACCESS_KEY: test
+        AWS_SESSION_TOKEN: test
       run: pytest -q
-
-
 
     - name: Load variables from .env_public
       shell: bash
       run: |
-       set -a
-       source .env_public
-       set +a
-       TLFIF_ENV=$(echo "$TLFIF_ENV" | tr -d '[:space:]')
-       ARTIFACT_BUCKET=$(echo "$ARTIFACT_BUCKET" | tr -d '[:space:]')
-       echo "TF_VAR_env=${TLFIF_ENV}"             >> $GITHUB_ENV
-       echo "TF_VAR_artifact_bucket=${ARTIFACT_BUCKET}" >> $GITHUB_ENV
-       echo "TLFIF_ENV=${TLFIF_ENV}"              >> $GITHUB_ENV
-       echo "ARTIFACT_BUCKET=${ARTIFACT_BUCKET}"  >> $GITHUB_ENV
+        set -a
+        source .env_public
+        set +a
+        TLFIF_ENV=$(echo "$TLFIF_ENV" | tr -d '[:space:]')
+        ARTIFACT_BUCKET=$(echo "$ARTIFACT_BUCKET" | tr -d '[:space:]')
+        echo "TF_VAR_env=${TLFIF_ENV}"             >> $GITHUB_ENV
+        echo "TF_VAR_artifact_bucket=${ARTIFACT_BUCKET}" >> $GITHUB_ENV
+        echo "TLFIF_ENV=${TLFIF_ENV}"              >> $GITHUB_ENV
+        echo "ARTIFACT_BUCKET=${ARTIFACT_BUCKET}"  >> $GITHUB_ENV
 
+    - name: Configure AWS Credentials for deploy
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: eu-central-1
 
     - name: Upload shared_deps layer to S3
       run: |
@@ -83,10 +83,9 @@ jobs:
 
     - name: Debug env
       run: |
-          echo "TF_VAR_env='$TF_VAR_env'"
-          echo "TLFIF_ENV='$TLFIF_ENV'"
-          cat .env_public
-
+        echo "TF_VAR_env='$TF_VAR_env'"
+        echo "TLFIF_ENV='$TLFIF_ENV'"
+        cat .env_public
 
     - name: Terraform apply
-      run: python tools.py tf-apply -g 
+      run: python tools.py tf-apply -g
