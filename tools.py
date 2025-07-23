@@ -177,21 +177,31 @@ def main() -> None:
     sp_ = p.add_subparsers(dest="cmd", required=True)
 
     sp_.add_parser("lambda-package", help="build router.zip")
-    sp_.add_parser("tf-apply",       help="zip + terraform init/apply")
+
+    tf_apply_sp = sp_.add_parser("tf-apply", help="zip + terraform init/apply")
+    tf_apply_sp.add_argument(
+        "-g", "--github",
+        action="store_true",
+        dest="github_mode",
+        help="running in GitHub CI: skip updating .env_public"
+    )
+
     rb = sp_.add_parser("lambda-rollback")
     rb.add_argument("--version", required=True, help="Lambda numeric version")
 
     args = p.parse_args()
     if args.cmd == "lambda-package":
         lambda_package()
+
     elif args.cmd == "tf-apply":
-        tf_apply()
+        # Pass through the --github flag
+        tf_apply(github_mode=args.github_mode)
+
     elif args.cmd == "lambda-rollback":
         lambda_rollback(args.version)
 
+
 if __name__ == "__main__":
-    if len(sys.argv) > 2:
-        raise SystemExit("Too many arguments")
-    github_mode = (len(sys.argv) > 1) and (sys.argv[1] in ("-g", "--github"))
-    tf_apply(github_mode=github_mode)
+    main()
+
 
