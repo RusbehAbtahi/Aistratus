@@ -59,8 +59,8 @@ jobs:
 
 
     - name: Load variables from .env_public
-       shell: bash
-       run: |
+      shell: bash
+      run: |
        set -a
        source .env_public
        set +a
