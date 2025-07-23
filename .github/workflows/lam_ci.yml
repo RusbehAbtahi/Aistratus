@@ -86,4 +86,4 @@ jobs:
           cat .env_public
 
     - name: Terraform apply
-      run: python tools.py tf-apply
+      run: python tools.py tf-apply -g

@@ -99,7 +99,7 @@ def lambda_package() -> None:
 
     safe_print(f"OK   : created {ZIP_OUT}  {(size/1024):,.0f} KiB")
 
-def tf_apply() -> None:
+def tf_apply(github_mode=False) -> None:
     tf = terraform_bin()          # resolve binary
     lambda_package()              # always rebuild first
 
@@ -115,7 +115,8 @@ def tf_apply() -> None:
     run(init_cmd, cwd=TERRAFORM_DIR)
     run([tf, "apply", "-auto-approve"], cwd=TERRAFORM_DIR)
     safe_print("OK   : terraform apply finished")
-    update_env_public_with_api_url()
+    if not github_mode:
+        update_env_public_with_api_url()
 
 def lambda_rollback(version: str) -> None:
     import subprocess, sys
@@ -189,4 +190,8 @@ def main() -> None:
         lambda_rollback(args.version)
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 2:
+        raise SystemExit("Too many arguments")
+    github_mode = (len(sys.argv) > 1) and (sys.argv[1] in ("-g", "--github"))
+    tf_apply(github_mode=github_mode)
+
