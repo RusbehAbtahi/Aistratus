@@ -97,6 +97,15 @@ module "apigateway" {
   aws_region          = var.aws_region
   router_lambda_arn  = module.compute.router_invoke_arn
   router_lambda_name  = module.compute.router_function_name
+  cognito_user_pool_id = module.auth.cognito_user_pool_id
+  cognito_client_id    = module.auth.cognito_client_id
+
+
+}
+
+module "sqs" {
+  source = "./modules/services/sqs"
+  env    = var.env
 }
 ```
 
@@ -112,6 +121,8 @@ locals {
     public_subnet_ids    = jsonencode(module.networking.public_subnet_ids)
     private_subnet_ids   = jsonencode(module.networking.private_subnet_ids)
     router_api_url       = module.apigateway.api_endpoint
+    job_queue_url        = module.sqs.queue_url
+    job_queue_arn        = module.sqs.queue_arn
   }
 }
 
@@ -252,6 +263,8 @@ locals {
     public_subnet_ids    = "${local.ssm_prefix}/public_subnet_ids"
     private_subnet_ids   = "${local.ssm_prefix}/private_subnet_ids"
     router_api_url       = "${local.ssm_prefix}/router_api_url"
+    job_queue_url        = "${local.ssm_prefix}/job_queue_url"
+    job_queue_arn        = "${local.ssm_prefix}/job_queue_arn"
   }
 }
 ```
@@ -273,7 +286,10 @@ resource "aws_cognito_user_pool" "main" {
 resource "aws_cognito_user_pool_client" "gui" {
   name         = "tl-fif-desktop"
   user_pool_id = aws_cognito_user_pool.main.id
-
+  explicit_auth_flows = [
+    "ALLOW_USER_PASSWORD_AUTH",
+    "ALLOW_REFRESH_TOKEN_AUTH"
+  ]
 #  lifecycle {
 #    prevent_destroy = true
 #    ignore_changes  = all
@@ -540,6 +556,19 @@ resource "aws_apigatewayv2_api" "router" {
   protocol_type = "HTTP"
 }
 
+
+resource "aws_apigatewayv2_authorizer" "cognito" {
+  api_id           = aws_apigatewayv2_api.router.id
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+
+  name = "cognito"
+  jwt_configuration {
+    audience = [var.cognito_client_id]
+    issuer   = "https://cognito-idp.${var.aws_region}.amazonaws.com/${var.cognito_user_pool_id}"
+  }
+}
+
 ########################################
 #  Lambda → API Integration (proxy)    #
 ########################################
@@ -565,6 +594,9 @@ resource "aws_apigatewayv2_route" "infer" {
   api_id    = aws_apigatewayv2_api.router.id
   route_key = "POST /infer"
   target    = "integrations/${aws_apigatewayv2_integration.lambda_proxy.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+
 }
 
 resource "aws_apigatewayv2_route" "stop" {
@@ -641,6 +673,14 @@ variable "aws_region" {
   description = "Region (must match provider)"
   type        = string
 }
+
+variable "cognito_user_pool_id" {
+  type = string
+}
+
+variable "cognito_client_id" {
+  type = string
+}
 ```
 
 ## terraform\10_global_backend\modules\services\compute\main.tf
@@ -654,6 +694,11 @@ module "iam" {
 
 data "aws_ssm_parameter" "pool"   { name = "/tinyllama/${var.env}/cognito_user_pool_id" }
 data "aws_ssm_parameter" "client" { name = "/tinyllama/${var.env}/cognito_client_id" }
+
+# ----------  queue URL ----------
+data "aws_ssm_parameter" "job_queue_url" {
+  name = "/tinyllama/${var.env}/job_queue_url"
+}
 
 resource "aws_lambda_function" "router" {
   function_name = "tlfif-${var.env}-router"
@@ -672,6 +717,7 @@ resource "aws_lambda_function" "router" {
       TL_DISABLE_LAM_ROUTER = "0"
       COGNITO_ISSUER = "https://cognito-idp.${var.aws_region}.amazonaws.com/${data.aws_ssm_parameter.pool.value}"
       COGNITO_AUD    = data.aws_ssm_parameter.client.value
+      JOB_QUEUE_URL         = data.aws_ssm_parameter.job_queue_url.value
     }
   }
 }
@@ -800,6 +846,29 @@ output "arn" {
   description = "IAM role ARN for Router Lambda"
   value       = aws_iam_role.router.arn
 }
+
+###############################################################################
+# SQS  ·  allow Lambda to enqueue jobs (SendMessage to the single job queue)
+###############################################################################
+
+# 1. Resolve the real queue ARN from SSM
+data "aws_ssm_parameter" "job_queue_arn" {
+  name = "/tinyllama/${var.env}/job_queue_arn"
+}
+
+# 2. Minimal, least-privilege policy
+data "aws_iam_policy_document" "sqs_send" {
+  statement {
+    sid       = "TLFIFSendSQS"
+    actions   = ["sqs:SendMessage"]
+    resources = [data.aws_ssm_parameter.job_queue_arn.value]
+  }
+}
+
+resource "aws_iam_role_policy" "sqs_send" {
+  role   = aws_iam_role.router.id
+  policy = data.aws_iam_policy_document.sqs_send.json
+}
 ```
 
 ## terraform\10_global_backend\modules\services\lambda_layers\main.tf
@@ -832,6 +901,46 @@ variable "shared_deps_layer_s3_key" {
 }
 variable "layer_bucket" {
   description = "S3 bucket that holds timestamped layer zips"
+  type        = string
+}
+```
+
+## terraform\10_global_backend\modules\services\sqs\main.tf
+
+```hcl
+resource "aws_sqs_queue" "job_queue" {
+  name                        = "job-queue.fifo"
+  fifo_queue                  = true
+  content_based_deduplication = true
+  visibility_timeout_seconds  = 60
+
+  tags = {
+    Project   = "tinyllama"
+    Env       = var.env
+    ManagedBy = "terraform"
+  }
+}
+```
+
+## terraform\10_global_backend\modules\services\sqs\outputs.tf
+
+```hcl
+output "queue_url" {
+  description = "URL of the SQS FIFO job queue"
+  value       = aws_sqs_queue.job_queue.id
+}
+
+output "queue_arn" {
+  description = "ARN of the SQS FIFO job queue"
+  value       = aws_sqs_queue.job_queue.arn
+}
+```
+
+## terraform\10_global_backend\modules\services\sqs\variable.tf
+
+```hcl
+variable "env" {
+  description = "Environment name (e.g. default, dev, prod)"
   type        = string
 }
 ```

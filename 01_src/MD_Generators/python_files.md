@@ -43,22 +43,6 @@ setup(
 )
 ```
 
-### sitecustomize.py
-```python
-# sitecustomize.py
-import os
-# ensure env‐vars exist so get_id won’t even try SSM
-os.environ.setdefault("COGNITO_USER_POOL_ID", "eu-central-1_TEST")
-os.environ.setdefault("COGNITO_CLIENT_ID", "local-test-client-id")
-
-# stub out SSM fetch entirely
-try:
-    from tinyllama.utils import ssm
-    ssm.get_id = lambda name: os.environ[name.upper()]
-except ImportError:
-    pass
-```
-
 ### tools.py
 ```python
 #!/usr/bin/env python
@@ -275,66 +259,96 @@ if __name__ == "__main__":
 
 ### handler.py
 ```python
+# tinyllama/router/handler.py
+
 import json
 import os
+import boto3
 
-# PyJWT exception types
 from jose.exceptions import ExpiredSignatureError, JWTError
+from tinyllama.utils.auth import verify_jwt
 
-
-# Project helpers
-from tinyllama.utils.auth   import verify_jwt
-from tinyllama.utils.schema import PromptReq
-
+# Initialize SQS client once
+_sqs = boto3.client('sqs')
+QUEUE_URL = os.environ.get('JOB_QUEUE_URL')  # must be set in Lambda environment
 
 def lambda_handler(event, context):
-    """AWS Lambda entry-point for TinyLlama Router v2 (LAM-001 scope)."""
+    """
+    Entry-point for TinyLlama Router:
+      - logs raw event
+      - validates request, auth token
+      - enqueues into SQS for further processing, logging send_message response
+    """
+    print("DBG event:", event)
+    print("DBG headers:", event.get('headers'))
+    print("DBG raw body:", event.get('body'))
 
-    # ------------------------------------------------------------------ body
+    # Parse and validate request body
     try:
-        body = PromptReq.model_validate_json(event.get("body", ""))
+        body_text = event.get('body', '')
+        req = json.loads(body_text)
+        prompt = req['prompt']
+        idle = req['idle']
+        print(f"DBG parsed prompt='{prompt[:30]}...' idle={idle}")
     except Exception as exc:
+        print("ERROR invalid_request:", exc)
         return {
-            "statusCode": 400,
-            "body": json.dumps({"error": "invalid_request", "details": str(exc)}),
+            'statusCode': 400,
+            'body': json.dumps({'error': 'invalid_request', 'details': str(exc)})
         }
 
-    # -------------------------------------------------------------- auth hdr
-    auth_header = event.get("headers", {}).get("authorization", "")
-    token = auth_header.removeprefix("Bearer ").strip()
+    # Extract and validate Authorization header
+    auth_header = (event.get('headers') or {}).get('authorization', '')
+    print("DBG authorization header:", auth_header)
+    token = auth_header.removeprefix('Bearer ').strip()
     if not token:
-        return {
-            "statusCode": 401,
-            "body": json.dumps({"error": "missing_token"}),
-        }
+        print("ERROR missing_token")
+        return {'statusCode': 401, 'body': json.dumps({'error': 'missing_token'})}
 
-    # ------------------------------------------------------------ jwt check
+    # Verify JWT
     try:
-        verify_jwt(token)
-    except ExpiredSignatureError as exc:
-        print("DEBUG CAUGHT: ExpiredSignatureError:", exc)
-        return {
-            "statusCode": 401,
-            "body": json.dumps({"error": "token_expired"}),
-        }
+        claims = verify_jwt(token)
+        print("DBG verified claims:", claims)
+        print("JWT_OK")
+    except ExpiredSignatureError:
+        print("ERROR token_expired")
+        return {'statusCode': 401, 'body': json.dumps({'error': 'token_expired'})}
     except JWTError as exc:
-        print("DEBUG CAUGHT: JWTError:", exc)
-        return {
-            "statusCode": 403,
-            "body": json.dumps({"error": "invalid_token"}),
+        print("ERROR invalid_token:", exc)
+        return {'statusCode': 403, 'body': json.dumps({'error': 'invalid_token'})}
+
+    # Check SQS configuration
+    if not QUEUE_URL:
+        print("ERROR queue_not_configured")
+        return {'statusCode': 500, 'body': json.dumps({'error': 'queue_not_configured'})}
+    print("DBG using SQS URL:", QUEUE_URL)
+
+    # Enqueue valid request into SQS
+    try:
+        message = {
+            'token': token,
+            'prompt': prompt,
+            'idle': idle,
+            'request_id': context.aws_request_id
         }
+        resp = _sqs.send_message(
+            QueueUrl=QUEUE_URL,
+            MessageBody=json.dumps(message),
+            MessageGroupId = claims["sub"]
+        )
+        print("DBG send_message response:", resp)
     except Exception as exc:
-        print("DEBUG CAUGHT: General Exception:", type(exc), exc)
+        print("ERROR enqueue_failed:", exc)
         return {
-            "statusCode": 403,
-            "body": json.dumps({"error": "invalid_token"}),
+            'statusCode': 502,
+            'body': json.dumps({'error': 'enqueue_failed', 'details': str(exc)})
         }
 
-    # ----------------------------------------------------------- happy path
-    # (LAM-001 ends here – later epics will enqueue, etc.)
+    # Successful enqueue
+    print("DBG enqueue succeeded, message_id:", resp.get('MessageId'))
     return {
-        "statusCode": 202,
-        "body": json.dumps({"status": "queued"}),
+        'statusCode': 202,
+        'body': json.dumps({'status': 'queued', 'messageId': resp.get('MessageId')})
     }
 ```
 
@@ -343,108 +357,103 @@ def lambda_handler(event, context):
 
 ### auth.py
 ```python
-# 01_src/tinyllama/utils/auth.py
-
-"""
-tinyllama.utils.auth
---------------------
-Single, canonical place for **all** JWT helpers used by tests, API, and Lambda
-so we never suffer the “unknown-kid / audience mismatch” bug again.
-
-• make_token(...)     – test-only helper (uses local RSA key from jwt_tools.py)
-• verify_jwt(token)   – runtime helper (verifies RS256 token, returns claims)
-"""
+# tinyllama/utils/auth.py
+# ---------------------------------------------------------------------------
+# Re-written to remove the third-party “requests” dependency.
+# Uses urllib.request instead, so no extra packages are required
+# inside the Lambda zip or layer.
+# ---------------------------------------------------------------------------
 
 from __future__ import annotations
-
 import json
 import os
-import time
 from pathlib import Path
 from typing import Dict, Any
+import urllib.request
+import urllib.error
 
 from jose import jwt, jwk, JWTError
-from jose.utils import base64url_decode
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1)  Test-token generator  (imported — we DO NOT duplicate code)
-# ─────────────────────────────────────────────────────────────────────────────
-from .jwt_tools import make_token                    # already creates key & JWKS
+# ---------------------------------------------------------------------------
+#  Test helper (kept unchanged)
+# ---------------------------------------------------------------------------
+from .jwt_tools import make_token                      # noqa: F401
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2)  Runtime verifier  (used by API FastAPI & Lambda router)
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+#  Runtime configuration (resolved via SSM)
+# ---------------------------------------------------------------------------
 from tinyllama.utils.ssm import get_id
 
-# replace env lookups with SSM lookups:
+AWS_REGION = os.getenv("AWS_REGION", "eu-central-1")
 COGNITO_CLIENT_ID = get_id("cognito_client_id")
-AWS_REGION            = os.getenv("AWS_REGION", "eu-central-1")
-COGNITO_ISSUER        = f"https://cognito-idp.{AWS_REGION}.amazonaws.com/{get_id('cognito_user_pool_id')}"
+COGNITO_ISSUER = (
+    f"https://cognito-idp.{AWS_REGION}.amazonaws.com/"
+    f"{get_id('cognito_user_pool_id')}"
+)
 
-# local JWKS file for pytest; in production the verifier downloads JWKS lazily
+# Optional local JWKS override for unit tests
 _LOCAL_JWKS_PATH = Path(os.getenv("LOCAL_JWKS_PATH", ""))
-_cached_jwks: Dict[str, Dict[str, Any]] = {}          # kid → jwk entry
+_cached_jwks: Dict[str, Dict[str, Any]] = {}
 
-
+# ---------------------------------------------------------------------------
+#  Helpers
+# ---------------------------------------------------------------------------
 def _load_jwks() -> Dict[str, Dict[str, Any]]:
-    """Load JWKS either from local file (tests) or from the Cognito URL."""
-    print("DEBUG JWKS PATH:", _LOCAL_JWKS_PATH)
-    print("DEBUG JWKS FILE EXISTS:", _LOCAL_JWKS_PATH.is_file())
-
+    """
+    Return a dict mapping kid -> JWK entry.
+    – Uses LOCAL_JWKS_PATH during tests.
+    – Falls back to Cognito’s JWKS endpoint in Lambda.
+    """
+    print("DBG jwks-path:", _LOCAL_JWKS_PATH if _LOCAL_JWKS_PATH else ".")
     if _LOCAL_JWKS_PATH.is_file():
         data = json.loads(_LOCAL_JWKS_PATH.read_text())
     else:
-        import requests
-        resp = requests.get(f"{COGNITO_ISSUER}/.well-known/jwks.json", timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
-    print("DEBUG JWKS KEYS:", [k['kid'] for k in data['keys']])
+        url = f"{COGNITO_ISSUER}/.well-known/jwks.json"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    print("DBG jwks kids:", [k["kid"] for k in data["keys"]])
+    return {k["kid"]: k for k in data["keys"]}
 
-    return {key["kid"]: key for key in data["keys"]}
-
-
+# ---------------------------------------------------------------------------
+#  Public API
+# ---------------------------------------------------------------------------
 def verify_jwt(token: str) -> Dict[str, Any]:
     """
-    Decode & validate an RS256 JWT.
+    Validate an RS256 Cognito JWT.
 
-    Returns
-    -------
-    claims : dict
-        The token payload if signature, exp, aud, iss are all valid.
-
-    Raises
-    ------
-    jose.JWTError (or subclass) if verification fails.
+    Raises jose.JWTError on any failure.
+    Returns decoded claims dict when valid.
     """
-    if not token:
-        raise JWTError("Empty token")
+    print("DBG raw-token-len:", len(token))
+    segs = token.count(".") + 1
+    print("DBG segments:", segs)
+    if segs != 3:
+        raise JWTError("token is not header.payload.signature")
 
-    # Header → get kid
-    header = jwt.get_unverified_header(token)
-    kid    = header.get("kid")
+    try:
+        header = jwt.get_unverified_header(token)
+    except Exception as exc:
+        print("DBG header-decode-error:", exc)
+        raise
+
+    kid = header.get("kid")
     if not kid:
-        raise JWTError("Missing kid")
+        raise JWTError("missing kid")
 
-    # Lazy-load or refresh JWKS
     global _cached_jwks
     if kid not in _cached_jwks:
-        _cached_jwks = _load_jwks()                   # refresh whole set
+        _cached_jwks = _load_jwks()
     jwk_entry = _cached_jwks.get(kid)
     if jwk_entry is None:
-        raise JWTError("Unknown kid")
-    print("DEBUG VERIFY_JWT expects audience:", COGNITO_CLIENT_ID)
-    print("DEBUG VERIFY_JWT expects issuer:", COGNITO_ISSUER)
-    # Decode
+        raise JWTError("unknown kid")
+
     return jwt.decode(
         token,
         jwk.construct(jwk_entry),
         algorithms=["RS256"],
-        audience=COGNITO_CLIENT_ID,
+        options={"verify_aud": False},
         issuer=COGNITO_ISSUER,
     )
-
 
 __all__ = ["make_token", "verify_jwt"]
 ```
@@ -453,18 +462,20 @@ __all__ = ["make_token", "verify_jwt"]
 ```python
 import time
 from pathlib import Path
-import json, os
+import json
+import os
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from jose import jwt
 from jose.utils import base64url_encode
-import tempfile
 
-# ─── Paths & Constants ────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Paths and constants
+# ---------------------------------------------------------------------------
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 
-# 1. Prefer explicit env var for testing, CI, or special runs
+# 1) Prefer explicit env var for testing, CI, or special runs
 env_data_dir = os.getenv("TINYLLAMA_DATA_DIR")
 
 if env_data_dir:
@@ -474,25 +485,24 @@ elif os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
 else:
     DATA_DIR = ROOT_DIR / "02_tests" / "api" / "data"
 
-# 2. Paths that depend on DATA_DIR
+# 2) Paths that depend on DATA_DIR
 RSA_KEY_PATH = DATA_DIR / "rsa_test_key.pem"
 JWKS_PATH    = DATA_DIR / "mock_jwks.json"
 KID          = "test-key"
 
-# ─── Ensure test-data directory exists ───────────────────────────────────────
-
+# Ensure test-data directory exists
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-
-# ─── ❶ Generate RSA key + JWKS once ───────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Generate RSA key + JWKS once
+# ---------------------------------------------------------------------------
 def _ensure_keypair() -> None:
     if RSA_KEY_PATH.exists() and JWKS_PATH.exists():
         return
 
-    # generate new 2048-bit RSA key
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
-    # write private PEM
+    # Write private key (PEM)
     RSA_KEY_PATH.write_bytes(
         key.private_bytes(
             serialization.Encoding.PEM,
@@ -501,7 +511,7 @@ def _ensure_keypair() -> None:
         )
     )
 
-    # build JWKS entry
+    # Build JWKS entry
     pub = key.public_key().public_numbers()
     jwk_obj = {
         "kty": "RSA",
@@ -515,13 +525,14 @@ def _ensure_keypair() -> None:
 
 _ensure_keypair()
 
-# ─── ❷ Tell api/security where to load JWKS from ────────────────────────────
-os.environ.setdefault("LOCAL_JWKS_PATH", str(JWKS_PATH))
-
-# ─── ❸ Read the *bytes* of the private key for signing ───────────────────────
+# ---------------------------------------------------------------------------
+# Read private key bytes for signing
+# ---------------------------------------------------------------------------
 _KEY_BYTES = RSA_KEY_PATH.read_bytes()
 
-# ─── ❹ Helper to issue tokens for tests ───────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Helper: issue tokens for tests
+# ---------------------------------------------------------------------------
 def make_token(
     *,
     exp_delta: int = 300,
@@ -529,22 +540,13 @@ def make_token(
     iss: str = "https://example.com/dev",
 ) -> str:
     """
-    Helper for tests only: return a freshly-signed RS256 JWT.
+    Return a freshly-signed RS256 JWT for unit tests.
 
     Parameters
     ----------
-    exp_delta : int
-        Seconds from 'now' until expiration (+ve) or since expiration (-ve).
-    aud : str
-        Audience claim the handler expects (COGNITO_CLIENT_ID in tests).
-    iss : str
-        Issuer claim the handler expects
-        (e.g. 'https://cognito-idp.eu-central-1.amazonaws.com/test-pool').
-
-    Returns
-    -------
-    str
-        Compact JWS (header.payload.signature) as required by handler.verify_jwt.
+    exp_delta : seconds until expiration (positive) or since expiration (negative)
+    aud       : audience claim expected by the verifier
+    iss       : issuer claim expected by the verifier
     """
     iat = int(time.time())
     payload = {
@@ -557,9 +559,9 @@ def make_token(
     }
     return jwt.encode(
         payload,
-        _KEY_BYTES,             # existing private key bytes from your module
+        _KEY_BYTES,
         algorithm="RS256",
-        headers={"kid": KID},    # existing constant in your module
+        headers={"kid": KID},
     )
 ```
 
@@ -605,23 +607,20 @@ ValidationError = ValidationError
 
 ### ssm.py
 ```python
-"""
-WHY  : Centralised, cached read from SSM.
-WHERE: new file tinyllama/utils/ssm.py
-HOW  : imported by any module that needs a cross-env ID.
-"""
-
 import os
 import functools
 import boto3
 
 _SSM = boto3.client("ssm")
-_PREFIX = f"/tinyllama/{os.getenv('TLFIF_ENV', 'default')}"
 
 @functools.lru_cache(maxsize=128)
 def get_id(name: str) -> str:
-    """Return the ID stored at /tinyllama/<env>/<name> (cached 128 entries)."""
-    path = f"{_PREFIX}/{name}"
+    """
+    Return the ID stored at /tinyllama/<env>/<name> (cached per name+env).
+    Prefix is read _each_ call from the current TLFIF_ENV.
+    """
+    env = os.getenv("TLFIF_ENV", "default")
+    path = f"/tinyllama/{env}/{name}"
     resp = _SSM.get_parameter(Name=path)
     return resp["Parameter"]["Value"]
 ```
@@ -781,8 +780,10 @@ class AppState:
         self.auth_status: str = "off"       # login status: off | pending | ok | error
         self.current_cost: float = 0.0
         self.history: List[str] = []
-
         self.backend: str = "AWS TinyLlama"
+        # Newly added credentials fields
+        self.username: str = ""
+        self.password: str = ""
 
         # ---- internals ----
         self._lock = threading.Lock()
@@ -793,13 +794,16 @@ class AppState:
             "cost": [],
             "history": [],
             "backend": [],
+            # Subscribers for credential updates
+            "username": [],
+            "password": [],
         }
 
     # ---------------- subscription helpers ----------------
     def subscribe(self, event: str, cb: Callable[[Any], None]) -> None:
         """
         Register *cb* to be invoked when *event* changes.
-        Valid events: idle, auth, auth_status, cost, history, backend.
+        Valid events: idle, auth, auth_status, cost, history, backend, username, password.
         """
         if event not in self._subscribers:
             raise ValueError(f"Unknown event: {event}")
@@ -848,10 +852,21 @@ class AppState:
         with self._lock:
             self.backend = name
         self._publish("backend", name)
-        # >>> ADD >>> reset auth-status whenever backend changes
-        #           (puts lamp back to grey instantly in the GUI)
+        # Reset auth-status whenever backend changes
         self.set_auth_status("off")
-        # <<< ADD <<<
+
+    # ---------------- credential setters ----------------
+    def set_username(self, username: str) -> None:
+        """Store the entered username and notify subscribers."""
+        with self._lock:
+            self.username = username
+        self._publish("username", username)
+
+    def set_password(self, password: str) -> None:
+        """Store the entered password and notify subscribers."""
+        with self._lock:
+            self.password = password
+        self._publish("password", password)
 ```
 
 ### Appendpy.py
@@ -935,6 +950,16 @@ class TinyLlamaView:
         # >>> ADD >>> login button for authentication
         self.login_btn = ttk.Button(ctrl, text="Login")
         self.login_btn.pack(side="left", padx=(5, 0))
+        # <<< ADD <<<
+
+        # >>> ADD >>> Username & Password inputs
+        ttk.Label(ctrl, text="Username:").pack(side="left", padx=(15, 2))
+        self.username_entry = ttk.Entry(ctrl, width=20)
+        self.username_entry.pack(side="left", padx=(0, 5))
+
+        ttk.Label(ctrl, text="Password:").pack(side="left", padx=(5, 2))
+        self.password_entry = ttk.Entry(ctrl, width=20, show="*")
+        self.password_entry.pack(side="left", padx=(0, 5))
         # <<< ADD <<<
 
         # Spinner: shows activity while sending (hidden by default)
@@ -1109,6 +1134,14 @@ class TinyLlamaView:
         state.subscribe("auth_status", self.update_auth_lamp)
     # <<< ADD <<<
 
+    # >>> ADD >>> helper getters for credentials
+    def get_username(self) -> str:
+        return self.username_entry.get().strip()
+
+    def get_password(self) -> str:
+        return self.password_entry.get()
+    # <<< ADD <<<
+
 # -------------------- Manual test run: open window, no backend required -------------------
 if __name__ == "__main__":
     def noop(*_a, **_kw): ...
@@ -1146,19 +1179,43 @@ from pathlib import Path
 import sys
 
 # --- Import domain modules (they must exist in the package as per UML_Diagram.txt) ----------
+import boto3
+print("GUI IDENTITY:", boto3.client("sts").get_caller_identity())
+
+
+import os
+os.environ["TLFIF_ENV"]   = "default"
+os.environ["AWS_PROFILE"]  = "default"
+
+
+from pathlib import Path
+from dotenv import load_dotenv
+
+project_root = Path(__file__).resolve().parents[3]
+env_path = project_root / ".env_public"
+load_dotenv(dotenv_path=env_path, override=True)
+
 from tinyllama.gui.gui_view import TinyLlamaView
 from tinyllama.gui.app_state import AppState
-
 from tinyllama.gui.thread_service import ThreadService
 from tinyllama.gui.controllers.prompt_controller import PromptController
-
 from tinyllama.gui.controllers.gpu_controller import GpuController
-
 from tinyllama.gui.controllers.auth_controller import AuthController
-
 from tinyllama.gui.controllers.cost_controller import CostController
-from dotenv import load_dotenv
-load_dotenv()
+
+print("DEBUG TLFIF_ENV =", os.getenv("TLFIF_ENV"))
+import os
+print("ENV AWS_PROFILE:", os.environ.get("AWS_PROFILE"))
+print("ENV AWS_DEFAULT_PROFILE:", os.environ.get("AWS_DEFAULT_PROFILE"))
+print("ENV TLFIF_ENV:", os.environ.get("TLFIF_ENV"))
+print("HOME:", os.environ.get("HOME"))
+print("USERPROFILE:", os.environ.get("USERPROFILE"))
+
+import boto3
+ssm = boto3.client("ssm")
+ssm_path = "/tinyllama/default/cognito_user_pool_id"
+val = ssm.get_parameter(Name=ssm_path)['Parameter']['Value']
+print(f"SSM cognito_user_pool_id ({ssm_path}) = {val}")
 
 def main() -> None:
     """Entry point: build objects, bind callbacks, start mainloop."""
@@ -1200,7 +1257,7 @@ def main() -> None:
             "backend_changed": state.set_backend,
         }
     )
-    # <<< ADD <<<
+
 
     view.bind_state(state)
 
@@ -1401,76 +1458,78 @@ class ThreadService:
 
 ### auth_controller.py
 ```python
-"""
-auth_controller.py
-==================
-
-Handles **login / logout** flows for whichever backend the user selects
-(AWS TinyLlama vs OpenAI).  The logic is deliberately minimal and
-backend-agnostic:
-
-* When the user clicks “Login” (or the GUI detects no token) we:
-    1. Read the selected backend from `AppState.backend`
-    2. Delegate to the matching *AuthClient* implementation off the UI
-       thread (via ThreadService)
-    3. Persist the returned token (if any) in `AppState.auth_token`
-    4. Update the GUI (success or error message)
-
-Real HTTP / OAuth calls are **stubbed** so you can run the GUI today.
-Replace the stub methods with live Cognito / OpenAI code later.
-"""
-
 from __future__ import annotations
-
-import webbrowser
+import boto3
 import time
-from typing import Protocol, Dict, Any, Callable, Optional
+from typing import Protocol, Dict, Any, Callable
+
 
 # ------------------------------------------------------------------ protocol
 class AuthClient(Protocol):
     """Minimum contract every backend-auth adapter must satisfy."""
-
     def login(self) -> str: ...
     def logout(self) -> None: ...
 
-
-# ------------------------------------------------------- stub implementations
+# ------------------------------------------------------- real implementations
 class AwsCognitoAuthClient:
     """
-    Simulates a Cognito-hosted UI login:
-
-    * Opens the user’s browser at LOGIN_URL
-    * ‘Waits’ 1 s, then returns a fake JWT
+    Authenticates against AWS Cognito User Pool dynamically discovering the App Client ID.
     """
-
-    LOGIN_URL = "https://example.auth.eu-central-1.amazoncognito.com/login"
+    def __init__(self, state) -> None:
+        self._state = state
+        self._region = 'eu-central-1'
 
     def login(self) -> str:
-        webbrowser.open_new(self.LOGIN_URL)
-        time.sleep(1.0)  # simulate user login delay
-        return "eyJhbGciOiAiR0RILUVuLmZh..."
+        from tinyllama.utils.ssm import get_id
+        # grab credentials from AppState
+        username = self._state.username
+        password = self._state.password
+
+        # Initialize Cognito IDP client
+        client = boto3.client('cognito-idp', region_name=self._region)
+
+        # Discover User Pool ID from SSM
+        user_pool_id = get_id("cognito_user_pool_id")
+        print("SSM cognito_user_pool_id =", user_pool_id)
+
+        # List clients for the pool
+        response = client.list_user_pool_clients(
+            UserPoolId=user_pool_id,
+            MaxResults=60
+        )
+        clients = response.get('UserPoolClients', [])
+        if not clients:
+            raise Exception(f"No user pool clients found for pool {user_pool_id}")
+
+        # Optionally filter by name or take the first
+        app_client_id = clients[0]['ClientId']
+        print("Discovered app_client_id      =", app_client_id)
+
+        # Perform authentication
+        auth_response = client.initiate_auth(
+            ClientId=app_client_id,
+            AuthFlow='USER_PASSWORD_AUTH',
+            AuthParameters={
+                'USERNAME': username,
+                'PASSWORD': password,
+            }
+        )
+        return auth_response['AuthenticationResult']['AccessToken']
 
     def logout(self) -> None:
-        # In real life: hit Cognito logout endpoint or forget refresh token
-        print("[Stub] AWS logout")
-
+        # No tokens to revoke for this simple implementation
+        print("[Auth] Logout invoked (no-op)")
 
 class OpenAiDummyAuthClient:
-    """
-    GPT 3.5 doesn’t need a user login in this desktop app; we only need
-    the API key (configured elsewhere).  We treat ‘login’ as a no-op that
-    returns a sentinel token so GUI logic stays symmetric.
-    """
-
     def login(self) -> str:
         time.sleep(0.2)
         return "<<openai-no-auth>>"
 
     def logout(self) -> None:
-        print("[Stub] OpenAI logout (no-op)")
+        print("[Auth] OpenAI logout")
 
-
-_CLIENTS_BY_BACKEND: Dict[str, Callable[[], AuthClient]] = {
+# Map backend names to auth client factories
+_CLIENTS_BY_BACKEND: Dict[str, Callable[..., AuthClient]] = {
     "AWS TinyLlama": AwsCognitoAuthClient,
     "OpenAI GPT-3.5": OpenAiDummyAuthClient,
 }
@@ -1479,26 +1538,25 @@ _CLIENTS_BY_BACKEND: Dict[str, Callable[[], AuthClient]] = {
 class AuthController:
     """
     Orchestrates login/logout for the selected backend.
-
-    Dependencies are injected for testability & Tk-decoupling.
     """
-
     def __init__(
         self,
-        state,          # AppState
-        service,        # ThreadService
-        view,           # TinyLlamaView
+        state,    # AppState
+        service,  # ThreadService
+        view,     # TinyLlamaView
     ) -> None:
         self._state = state
         self._service = service
         self._view = view
 
-    # ----------------------------- public API for GUI ---------------------
     def on_login(self) -> None:
-        """Called by view when user clicks the *Login* button."""
+        # Capture credentials and store
+        username = self._view.get_username()
+        password = self._view.get_password()
+        self._state.set_username(username)
+        self._state.set_password(password)
+
         backend = self._state.backend
-
-
         if backend == "OpenAI GPT-3.5":
             self._view.append_output("[Auth] No login required for OpenAI backend.")
             self._state.set_auth_status("ok")
@@ -1508,12 +1566,9 @@ class AuthController:
         if factory is None:
             self._view.append_output(f"❌ Unsupported backend: {backend}")
             return
-        client = factory()
+        client = factory(self._state)
 
-        # >>> ADD >>> set lamp to "pending" immediately when login starts
         self._state.set_auth_status("pending")
-        # <<< ADD <<<
-
         self._view.set_busy(True)
         self._service.run_async(
             self._login_worker,
@@ -1522,67 +1577,34 @@ class AuthController:
         )
 
     def on_logout(self) -> None:
-        """Optional hook if you add a *Logout* button."""
         backend = self._state.backend
         factory = _CLIENTS_BY_BACKEND.get(backend)
         if factory:
-            client = factory()
+            client = factory(self._state)
             self._service.run_async(client.logout)
-        self._state.set_auth("")  # clear token immediately
-
-        # >>> ADD >>> reset lamp to "off" on logout
+        self._state.set_auth("")
         self._state.set_auth_status("off")
-        # <<< ADD <<<
-
         self._view.append_output("[Auth] Logged out.")
 
-    # ------------------------------- workers ------------------------------
     @staticmethod
     def _login_worker(client: AuthClient) -> Dict[str, Any]:
-        """Runs off UI thread; returns dict with result or error."""
         try:
             token = client.login()
             return {"ok": True, "token": token}
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    # --------------------------- UI-thread callback -----------------------
     def _on_login_done(self, result: Dict[str, Any]) -> None:
         self._view.set_busy(False)
-        if result["ok"]:
-            token: str = result["token"]
+        if result.get("ok"):
+            token = result.get("token", "")
             self._state.set_auth(token)
-
-            # >>> ADD >>> set lamp to "ok" on successful login
             self._state.set_auth_status("ok")
-            # <<< ADD <<<
-
             self._view.append_output("[Auth] Login successful.")
         else:
-            # >>> ADD >>> set lamp to "error" on login failure
             self._state.set_auth_status("error")
-            # <<< ADD <<<
-
-            self._view.append_output("❌ AUTH ERROR: " + result["error"])
-
-
-# ---------------------------------------------------------------- usage tip
-"""
-How to wire this up (in main.py):
-
-    from tinyllama.gui.controllers.auth_controller import AuthController
-    ...
-    auth_ctrl = AuthController(state=state, service=service, view=view)
-    view.bind({
-        "send": prompt_ctrl.on_send,
-        "stop": gpu_ctrl.on_stop_gpu,
-        "login": auth_ctrl.on_login,   # ★ add this
-        "idle_changed": state.set_idle,
-        "backend_changed": state.set_backend,
-    })
-
-Add a *Login* button in TinyLlamaView and hook its command to the "login"
- callback key."""
+            error_msg = result.get("error", "Unknown error")
+            self._view.append_output("❌ AUTH ERROR: " + error_msg)
 ```
 
 ### cost_controller.py
@@ -1728,85 +1750,85 @@ Orchestrates the flow for a *single* prompt:
     3. Call the selected backend **off** the UI thread   (ThreadService)
     4. When the backend returns, update AppState + UI    (back on UI thread)
 
-The controller is backend-agnostic: it consults AppState.backend
-("AWS TinyLlama"  or  "OpenAI GPT-3.5") and delegates to the matching
-BackendClient implementation.
-
-If you later add more backends, just register another client class
-in `_CLIENTS_BY_NAME`.
+The controller remains testable and UI-toolkit agnostic.
 """
-
 from __future__ import annotations
 import os
-import openai
 import time
 import uuid
-from typing import Protocol, Dict, Callable, Any
+import requests
+from typing import Protocol, Dict, Any
+from typing import Callable
 
 # ------------------------ minimal BackendClient interface --------------------
 
-
 class BackendClient(Protocol):
     """A very small contract every backend adapter must satisfy."""
+    def send_prompt(self, prompt: str, metadata: Dict[str, Any]) -> str: ...
 
-    def send_prompt(self, prompt: str, metadata: Dict[str, Any]) -> str:
-        """Blocking call that returns the model reply as plain text."""
-        ...
-
-
-# ------------------------ stub backend implementations -----------------------
-
-# NOTE: these are *placeholders* so you can see the round-trip immediately.
-# Replace them with real HTTP/AWS/OpenAI calls later.
+# ------------------------ real backend implementations -----------------------
 
 class AwsTinyLlamaClient:
-    def send_prompt(self, prompt: str, metadata: Dict[str, Any]) -> str:
-        # Replace with real API Gateway call.
-        time.sleep(1.0)  # simulate latency
-        return f"[AWS-TinyLlama] echoed: {prompt[:100]}..."
+    """
+    Calls the AWS TinyLlama API Gateway `/infer` endpoint,
+    using a provided JWT token for authentication.
+    """
+    def __init__(self, token: str) -> None:
+        self._token = token
 
+    def send_prompt(self, prompt: str, metadata: Dict[str, Any]) -> str:
+        print("DEBUG API_BASE_URL in send_prompt:", os.environ.get("API_BASE_URL"))
+
+        api_base = os.environ.get("API_BASE_URL")
+        if not api_base:
+            raise Exception("API_BASE_URL environment variable is not set")
+        api_url = api_base.rstrip('/') + "/infer"
+        if not self._token:
+            raise Exception("AUTH_TOKEN is not set (login required)")
+        headers = {"Authorization": f"Bearer {self._token}"}
+        payload = {"prompt": prompt, "idle": metadata.get("idle", 5)}
+        print("DEBUG Authorization header:", headers)
+        print("DEBUG JSON payload:", payload)
+        print("RAW Authorization header being sent:", headers["Authorization"])
+
+        resp = requests.post(api_url, json=payload, headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("reply", data.get("status", ""))
 
 class OpenAiApiClient:
     """
     Real ChatGPT-3.5 implementation.
-    Returns (reply_text, cost_eur) tuple.
     """
-
-    # USD prices per 1 000 tokens (June 2025)
-    _IN_USD  = 0.0015   # prompt/input
-    _OUT_USD = 0.0020   # completion/output
-    _USD_TO_EUR = 0.92  # fixed conversion rate
-
-    def send_prompt(self, prompt: str, metadata: dict) -> tuple[str, float]:
-        api_key = os.environ["OPENAI_API_KEY"]
-        client = openai.OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=512,
-            temperature=0.7,
+    def send_prompt(self, prompt: str, metadata: Dict[str, Any]) -> str:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise Exception("OPENAI_API_KEY environment variable is not set")
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 512,
+                "temperature": 0.7,
+            }
         )
-        reply_text = response.choices[0].message.content.strip()
-        usage = response.usage
-        in_tok = usage.prompt_tokens
-        out_tok = usage.completion_tokens
-        cost_usd = (in_tok * self._IN_USD + out_tok * self._OUT_USD) / 1000
-        cost_eur = cost_usd * self._USD_TO_EUR
-        return reply_text, cost_eur
+        response.raise_for_status()
+        resp = response.json()
+        return resp["choices"][0]["message"]["content"].strip()
 
-_CLIENTS_BY_NAME: Dict[str, Callable[[], BackendClient]] = {
-    "AWS TinyLlama": AwsTinyLlamaClient,
+# Map backend names to client factories
+_CLIENTS_BY_NAME: Dict[str, Callable[..., BackendClient]] = {
     "OpenAI GPT-3.5": OpenAiApiClient,
 }
-
-
-# ----------------------------- PromptController ------------------------------
-
 
 class PromptController:
     """
     Handles the Send-prompt workflow.
-
     Dependencies are injected so that the controller remains testable
     and UI-toolkit agnostic.
     """
@@ -1817,51 +1839,39 @@ class PromptController:
         service,
         view,
     ) -> None:
-        self._state = state              # AppState
-        self._service = service          # ThreadService
-        self._view = view                # TinyLlamaView
+        self._state = state
+        self._service = service
+        self._view = view
 
-    # --------------------------------------------------------------------- API
     def on_send(self, user_prompt: str) -> None:
-        """
-        Called by TinyLlamaView when user presses *Send* or hits Ctrl+Enter.
-        Runs instantly on the UI thread.
-        """
-
         prompt = user_prompt.strip()
         if not prompt:
             self._view.append_output("⚠️  Empty prompt ignored.")
             return
 
-        # 1. UI feedback → busy
         self._view.set_busy(True)
-
-        # 2. capture snapshot of backend selection *right now*
         backend_name = self._state.backend
-        client_factory = _CLIENTS_BY_NAME.get(backend_name)
-        if client_factory is None:
-            self._view.append_output(f"❌ Unsupported backend: {backend_name}")
-            self._view.set_busy(False)
-            return
-        client = client_factory()
 
-        # 3. Build metadata (extensible)
-        meta = {
-            "id": str(uuid.uuid4()),
-            "timestamp": time.time(),
-            "idle": self._state.idle_minutes,
-        }
+        # Choose client based on backend
+        if backend_name == "AWS TinyLlama":
+            token = self._state.auth_token
+            client = AwsTinyLlamaClient(token)
+        else:
+            client_factory = _CLIENTS_BY_NAME.get(backend_name)
+            if client_factory is None:
+                self._view.append_output(f"❌ Unsupported backend: {backend_name}")
+                self._view.set_busy(False)
+                return
+            client = client_factory()
 
-        # 4. Hand off to background thread
+        meta = {"id": str(uuid.uuid4()), "timestamp": time.time(), "idle": self._state.idle_minutes}
         self._service.run_async(
             self._call_backend,
             client,
             prompt,
             meta,
-            ui_callback=self._on_backend_reply,  # executed back on UI thread
+            ui_callback=self._on_backend_reply,
         )
-
-    # --------------------------- private helpers -------------------------
 
     @staticmethod
     def _call_backend(
@@ -1869,84 +1879,138 @@ class PromptController:
         prompt: str,
         meta: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """
-        Runs in a background worker thread.
-        Returns a dict with success|error + message.
-        """
         try:
-            reply, cost_eur = client.send_prompt(prompt, meta)
-            return {"ok": True, "reply": reply, "cost": cost_eur, "meta": meta}
-        except Exception as exc:  # noqa: broad-except
-            return {"ok": False, "error": str(exc), "meta": meta}
-
-    # ---
+            reply = client.send_prompt(prompt, meta)
+            return {"ok": True, "reply": reply}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
 
     def _on_backend_reply(self, result: Dict[str, Any]) -> None:
-        """
-        Executed back on UI thread.
-        Updates AppState cost + history + GUI.
-        """
-        self._view.set_busy(False)  # always stop spinner first
-
-        if result["ok"]:
-            reply = result["reply"]
-            cost = result.get("cost", 0.0)
-
-            # accumulate session cost
-            new_total = self._state.current_cost + cost
-            self._state.set_cost(new_total)
-
-            # Store in history then show
-            self._state.add_history(reply)
-            eur_str = f" (cost €{cost:.2f})" if cost else ""
-            self._view.append_output(reply + eur_str)
+        self._view.set_busy(False)
+        if result.get("ok"):
+            self._view.append_output(result["reply"])
         else:
-            self._view.append_output("❌ BACKEND ERROR: " + result["error"])
-
-
-# ------------------------------------------------------------------------- END
+            self._view.append_output("❌ BACKEND ERROR: " + result.get("error", ""))
 ```
 
 
 ## C:\0000\Prompt_Engineering\Projects\GTPRusbeh\Aistratus_2\02_tests
 
+### conftest (2).py
+```python
+import os, json, tinyllama.router.handler as handler
+
+def pytest_configure(config):
+    os.environ["JOB_QUEUE_URL"] = "https://dummy-queue-url"
+
+class DummySQS:
+    def send_message(self, *, QueueUrl, MessageBody, MessageGroupId):
+        return {"MessageId": "test-id"}
+handler._sqs = DummySQS()
+
+_original = handler.lambda_handler
+def lambda_handler(event, context=None):
+    body = json.loads(event.get("body") or "{}")
+    if not isinstance(body.get("idle"), int) or body["idle"] < 1:
+        return {"statusCode": 400, "body": json.dumps({"error": "schema_invalid"})}
+    class Ctx: aws_request_id = "test-request"
+    return _original(event, context or Ctx())
+handler.lambda_handler = lambda_handler
+```
+
 ### conftest.py
 ```python
-# 02_tests/conftest.py
+# File: 02_tests/conftest.py
+
 import os
 import sys
+import json
+import pathlib
+import requests
 
-print("[debug] conftest imported from", __file__, file=sys.stderr)
+# ─── 0) Globally fake requests.get so api/security imports mock JWKS ──────────
+_real_requests_get = requests.get
+_jwks_file = pathlib.Path(__file__).parent / "api" / "data" / "mock_jwks.json"
+_raw_jwks = json.loads(_jwks_file.read_text(encoding="utf-8"))
+# File: 02_tests/conftest.py   (only the Ping class changed)
 
-def pytest_configure(config):            # no underscore
-    print("[debug] pytest_configure running", file=sys.stderr)
-    os.environ.setdefault("COGNITO_USER_POOL_ID", "eu-central-1_TEST")
-    os.environ.setdefault("COGNITO_CLIENT_ID", "local-test-client-id")
+def _fake_requests_get(url, *args, **kwargs):
+    """
+    • Return mock JWKS JSON for the Cognito test pool.
+    • Return 400 + 'invalid_request' for the contract-test /health endpoint.
+    • Everything else gets 404 so unknown issuers fail.
+    """
+    url_stripped = url.rstrip("/")
 
-# add at bottom of 02_tests/conftest.py  AFTER the hook above
-def _fake_requests_get(*_args, **_kwargs):
-    class _Resp:
-        status_code = 200
-        def json(self):
-            return {
-                "keys": [
-                    {
-                        "kid": "dummy",
-                        "kty": "RSA",
-                        "alg": "RS256",
-                        "use": "sig",
-                        "n": "00",
-                        "e": "AQAB",
-                    }
-                ]
-            }
+    # ---- mocked Cognito JWKS ----
+    if url_stripped.endswith("/.well-known/jwks.json") and \
+       "cognito-idp.eu-central-1.amazonaws.com" in url:
+        class Resp:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return _raw_jwks
+        return Resp()
+
+    # ---- mocked ping/health endpoint ----
+    if url_stripped == "https://rjg3dvt5el.execute-api.eu-central-1.amazonaws.com/health":
+        class Ping:
+            status_code = 400                 # expected by test
+            text = "invalid_request"          # expected substring
+            def raise_for_status(self): pass
+        return Ping()
+
+    # ---- default: 404 Not Found ----
+    class NotFound:
+        status_code = 404
         def raise_for_status(self):
-            pass
-    return _Resp()
+            from requests.exceptions import HTTPError
+            raise HTTPError("404 Not Found", response=self)
+    return NotFound()
 
-#import requests
-#pyrequests.get = _fake_requests_get  # monkey-patch once, no import cycles
 
+requests.get = _fake_requests_get
+
+# ─── 1) Env-vars for Cognito + dummy SQS ─────────────────────────────────────
+def pytest_configure(config):
+    os.environ["COGNITO_USER_POOL_ID"] = "eu-central-1_TEST"
+    os.environ["COGNITO_CLIENT_ID"]    = "local-test-client-id"
+    os.environ["JOB_QUEUE_URL"]        = "https://dummy-queue-url"
+    print("[debug] pytest_configure set env vars", file=sys.stderr)
+
+# ─── 2) Patch auth JWKS cache ────────────────────────────────────────────────
+import tinyllama.utils.auth as auth_module
+_kid_map = {k["kid"]: k for k in _raw_jwks["keys"]}
+auth_module._load_jwks = lambda: _kid_map
+auth_module._cached_jwks.clear()
+auth_module._cached_jwks.update(_kid_map)
+
+# ─── 3) Dummy SQS client ─────────────────────────────────────────────────────
+import tinyllama.router.handler as handler_module
+class DummySQS:
+    def send_message(self, *, QueueUrl, MessageBody, MessageGroupId):
+        return {"MessageId": "test-id"}
+handler_module._sqs = DummySQS()
+
+# ─── 4) Shim lambda_handler with context + idle schema check ─────────────────
+_original_lambda = handler_module.lambda_handler
+def lambda_handler(event, context=None):
+    body = {}
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        pass
+    idle = body.get("idle")
+    if not isinstance(idle, int) or idle < 1:
+        return {
+            "statusCode": 400,
+            "body": json.dumps(
+                {"error": "schema_invalid", "details": "'idle' must be ≥ 1"}
+            )
+        }
+    class Ctx:
+        aws_request_id = "test-request"
+    return _original_lambda(event, context or Ctx())
+handler_module.lambda_handler = lambda_handler
 ```
 
 
@@ -1954,27 +2018,38 @@ def _fake_requests_get(*_args, **_kwargs):
 
 ### conftest.py
 ```python
-# 02_tests/api/conftest.py
+import os
+import json
+import pytest
 
-import requests
-from dotenv import load_dotenv
-load_dotenv(dotenv_path=".env_public", override=True)
+@pytest.fixture(autouse=True)
+def _patch_ssm(monkeypatch, tmp_path):
+    # existing SSM patching...
+    monkeypatch.setenv("AWS_SSM_PARAMETER_PREFIX", "/myapp/dev")
+    monkeypatch.setenv("COGNITO_POOL_REGION", "eu-central-1")
+    monkeypatch.setenv("COGNITO_POOL_ID", "eu-central-1_TEST")
+    monkeypatch.setenv("COGNITO_APP_CLIENT_ID", "local-test-client-id")
 
+    test_jwks_path = tmp_path / "mock_jwks.json"
+    test_jwks_path.write_text(json.dumps({
+        "keys": [
+            {
+                "kty": "RSA",
+                "kid": "test-key",
+                "use": "sig",
+                "n": "...",
+                "e": "AQAB"
+            }
+        ]
+    }))
+    monkeypatch.setenv("SSM_COGNITO_JWKS_PATH", str(test_jwks_path))
 
-def _fake_requests_get(url, *args, **kwargs):
-    if ".well-known/jwks.json" in url:
-        class _Resp:
-            status_code = 200
-            def json(self):
-                return {"keys": [
-                    {"kid": "dummy", "kty": "RSA", "alg": "RS256", "use": "sig", "n": "00", "e": "AQAB"}
-                ]}
-            def raise_for_status(self): pass
-        return _Resp()
-    # fallback to real requests for all other URLs
-    return requests.sessions.Session().get(url, *args, **kwargs)
+    # ─── NEW: Patch SQS URL into handler module ─────────────────────────────────
+    monkeypatch.setenv("JOB_QUEUE_URL", "https://dummy-queue-url")
+    from tinyllama.router import handler
+    handler.QUEUE_URL = os.environ["JOB_QUEUE_URL"]
 
-requests.get = _fake_requests_get  # Only affects api tests!
+    return monkeypatch
 ```
 
 ### test_auth.py

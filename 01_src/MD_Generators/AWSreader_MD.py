@@ -8,6 +8,7 @@ Creates **terraform_resources.md** in the same folder.
 * Produces:
     1. Inventory tables (Compute, API GW, Networking, Cognito, SSM, IAM, CW)
     2. Dependency Map + Mermaid diagram
+    3. Terraform Outputs
 """
 
 import json
@@ -48,7 +49,6 @@ def assume_principals(inst: dict) -> str:
             else:
                 return val
     return "N/A"
-
 
 
 def collect_edges(state: dict) -> list[str]:
@@ -115,6 +115,23 @@ def md_header(state):
     ]
 
 
+def md_outputs(state):
+    outputs = state.get("outputs", {})
+    if not outputs:
+        return []
+    lines = ["## Terraform Outputs", ""]
+    lines.append("| Name | Value |")
+    lines.append("| --- | --- |")
+    for name, out in outputs.items():
+        value = out.get("value")
+        # render lists/dicts as JSON
+        val_str = json.dumps(value) if isinstance(value, (list, dict)) else str(value)
+        # wrap in code fencing for clarity
+        lines.append(f"| {name} | `{val_str}` |")
+    lines.append("")
+    return lines
+
+
 def md_lambda(state):
     funcs, layers = [], []
     for r in state["resources"]:
@@ -138,7 +155,7 @@ def md_lambda(state):
         lines.append("")
     if layers:
         lines.append("| Layer name | ARN |\n| --- | --- |")
-        lines += [f"| {n} | {arn} |" for n,arn in layers]
+        lines += [f"| {n} | {arn} |" for n, arn in layers]
         lines.append("")
     return lines
 
@@ -172,7 +189,7 @@ def md_apigw(state):
 def md_network(state):
     lines = ["## Networking", ""]
     # VPC
-    vpc = next((r for r in state["resources"] if r["type"]=="aws_vpc"), None)
+    vpc = next((r for r in state["resources"] if r["type"] == "aws_vpc"), None)
     if vpc:
         a = vpc["instances"][0]["attributes"]
         lines += [
@@ -183,7 +200,7 @@ def md_network(state):
     # Subnets
     subs = [
         i["attributes"]
-        for r in state["resources"] if r["type"]=="aws_subnet"
+        for r in state["resources"] if r["type"] == "aws_subnet"
         for i in r["instances"]
     ]
     if subs:
@@ -192,15 +209,15 @@ def md_network(state):
             lines.append(f"| {s['id']} | {s['cidr_block']} | {s['availability_zone']} |")
         lines.append("")
     # IGW & RTs
-    igw = next((r for r in state["resources"] if r["type"]=="aws_internet_gateway"), None)
+    igw = next((r for r in state["resources"] if r["type"] == "aws_internet_gateway"), None)
     if igw:
         lines.append(f"- **Internet Gateway** → `{igw['instances'][0]['attributes']['id']}`")
-    rts = [r for r in state["resources"] if r["type"]=="aws_route_table"]
+    rts = [r for r in state["resources"] if r["type"] == "aws_route_table"]
     if rts:
         lines.append("| Route Table ID | Name |\n| --- | --- |")
         for rt in rts:
             a = rt["instances"][0]["attributes"]
-            name = a.get("tags",{}).get("Name","")
+            name = a.get("tags", {}).get("Name", "")
             lines.append(f"| {a['id']} | {name} |")
     lines.append("")
     return lines
@@ -209,7 +226,7 @@ def md_network(state):
 def md_cognito(state):
     lines = ["## Cognito", ""]
     for r in state["resources"]:
-        if r["type"]=="aws_cognito_user_pool":
+        if r["type"] == "aws_cognito_user_pool":
             a = r["instances"][0]["attributes"]
             lines += [
                 f"### aws_cognito_user_pool.main",
@@ -219,7 +236,7 @@ def md_cognito(state):
                 f"- **Endpoint** → `{a['endpoint']}`",
                 ""
             ]
-        if r["type"]=="aws_cognito_user_pool_client":
+        if r["type"] == "aws_cognito_user_pool_client":
             a = r["instances"][0]["attributes"]
             lines += [
                 f"### aws_cognito_user_pool_client.gui",
@@ -233,15 +250,32 @@ def md_cognito(state):
 
 def md_ssm(state):
     rows = [
-        (r["type"]+"."+r["name"], i["attributes"]["name"])
-        for r in state["resources"] if r["type"]=="aws_ssm_parameter"
+        (r["type"] + "." + r["name"], i["attributes"]["name"])
+        for r in state["resources"] if r["type"] == "aws_ssm_parameter"
         for i in r["instances"]
     ]
     rows = dedupe_ssm(rows)
     if not rows:
         return []
     lines = ["## SSM Parameters", "", "| Terraform addr | SSM Param |", "| --- | --- |"]
-    lines += [f"| {a} | {p} |" for a,p in rows]
+    lines += [f"| {addr} | {param} |" for addr, param in rows]
+    lines.append("")
+    return lines
+
+
+def md_sqs(state):
+    lines = ["## SQS Queues", ""]
+    queues = []
+    for r in state["resources"]:
+        if r["type"] == "aws_sqs_queue":
+            a = r["instances"][0]["attributes"]
+            queues.append((a["name"], a["arn"], a.get("url", "—")))
+    if not queues:
+        return []
+    lines.append("| Name | ARN | URL |")
+    lines.append("| ---- | --- | --- |")
+    for name, arn, url in queues:
+        lines.append(f"| {name} | {arn} | {url} |")
     lines.append("")
     return lines
 
@@ -249,19 +283,19 @@ def md_ssm(state):
 def md_iam(state):
     lines = ["## IAM Roles", "", "| Role | Trusted by | Attached/Inline |", "| --- | --- | --- |"]
     for r in state["resources"]:
-        if r["type"]=="aws_iam_role":
+        if r["type"] == "aws_iam_role":
             inst = r["instances"][0]
             name = inst["attributes"]["name"]
             principals = assume_principals(inst)
             attached = sum(
                 1 for x in state["resources"]
-                if x["type"]=="aws_iam_role_policy_attachment"
-                and x["instances"][0]["attributes"]["role"]==name
+                if x["type"] == "aws_iam_role_policy_attachment"
+                and x["instances"][0]["attributes"]["role"] == name
             )
             inline = sum(
                 1 for x in state["resources"]
-                if x["type"]=="aws_iam_role_policy"
-                and x["instances"][0]["attributes"]["role"]==name
+                if x["type"] == "aws_iam_role_policy"
+                and x["instances"][0]["attributes"]["role"] == name
             )
             lines.append(f"| {name} | {principals} | {attached}/{inline} |")
     lines.append("")
@@ -271,10 +305,10 @@ def md_iam(state):
 def md_cloudwatch(state):
     rows = []
     for r in state["resources"]:
-        if r["type"] in ("aws_cloudwatch_log_group","aws_cloudwatch_metric_alarm"):
+        if r["type"] in ("aws_cloudwatch_log_group", "aws_cloudwatch_metric_alarm"):
             inst = r["instances"][0]["attributes"]
             display = inst.get("name") or inst.get("log_group_name") or inst.get("alarm_name")
-            rows.append((r["type"]+"."+r["name"], display))
+            rows.append((r["type"] + "." + r["name"], display))
     if not rows:
         return []
     lines = ["## Observability (CloudWatch)", "", "| Terraform addr | Name |", "| --- | --- |"]
@@ -292,13 +326,12 @@ def md_dependency_map(edges):
     lines.append("")
     lines.append("```mermaid\nflowchart TD")
     for e in edges:
-        a,b = [p.strip() for p in e.split("→")]
-        fa = a.replace(" ","_"); fb = b.replace(" ","_")
+        a, b = [p.strip() for p in e.split("→")]
+        fa = a.replace(" ", "_"); fb = b.replace(" ", "_")
         lines.append(f"    {fa} --> {fb}")
     lines.append("```")
     lines.append("")
     return lines
-
 
 # ────────────────────────────────────────────────────────────────────────────
 # Main
@@ -309,11 +342,13 @@ def main():
 
     md = []
     md += md_header(state)
+    md += md_outputs(state)
     md += md_lambda(state)
     md += md_apigw(state)
     md += md_network(state)
     md += md_cognito(state)
     md += md_ssm(state)
+    md += md_sqs(state)
     md += md_iam(state)
     md += md_cloudwatch(state)
     md += md_dependency_map(edges)

@@ -51,3 +51,26 @@ output "arn" {
   description = "IAM role ARN for Router Lambda"
   value       = aws_iam_role.router.arn
 }
+
+###############################################################################
+# SQS  ·  allow Lambda to enqueue jobs (SendMessage to the single job queue)
+###############################################################################
+
+# 1. Resolve the real queue ARN from SSM
+data "aws_ssm_parameter" "job_queue_arn" {
+  name = "/tinyllama/${var.env}/job_queue_arn"
+}
+
+# 2. Minimal, least-privilege policy
+data "aws_iam_policy_document" "sqs_send" {
+  statement {
+    sid       = "TLFIFSendSQS"
+    actions   = ["sqs:SendMessage"]
+    resources = [data.aws_ssm_parameter.job_queue_arn.value]
+  }
+}
+
+resource "aws_iam_role_policy" "sqs_send" {
+  role   = aws_iam_role.router.id
+  policy = data.aws_iam_policy_document.sqs_send.json
+}

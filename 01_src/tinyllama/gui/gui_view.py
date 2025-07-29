@@ -43,6 +43,16 @@ class TinyLlamaView:
         self.login_btn.pack(side="left", padx=(5, 0))
         # <<< ADD <<<
 
+        # >>> ADD >>> Username & Password inputs
+        ttk.Label(ctrl, text="Username:").pack(side="left", padx=(15, 2))
+        self.username_entry = ttk.Entry(ctrl, width=20)
+        self.username_entry.pack(side="left", padx=(0, 5))
+
+        ttk.Label(ctrl, text="Password:").pack(side="left", padx=(5, 2))
+        self.password_entry = ttk.Entry(ctrl, width=20, show="*")
+        self.password_entry.pack(side="left", padx=(0, 5))
+        # <<< ADD <<<
+
         # Spinner: shows activity while sending (hidden by default)
         self.spinner = ttk.Progressbar(ctrl, mode="indeterminate", length=120)
 
@@ -213,6 +223,14 @@ class TinyLlamaView:
         automatically reflects every change to ``auth_status``.
         """
         state.subscribe("auth_status", self.update_auth_lamp)
+    # <<< ADD <<<
+
+    # >>> ADD >>> helper getters for credentials
+    def get_username(self) -> str:
+        return self.username_entry.get().strip()
+
+    def get_password(self) -> str:
+        return self.password_entry.get()
     # <<< ADD <<<
 
 # -------------------- Manual test run: open window, no backend required -------------------

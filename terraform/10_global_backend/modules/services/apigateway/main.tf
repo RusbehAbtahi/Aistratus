@@ -6,6 +6,19 @@ resource "aws_apigatewayv2_api" "router" {
   protocol_type = "HTTP"
 }
 
+
+resource "aws_apigatewayv2_authorizer" "cognito" {
+  api_id           = aws_apigatewayv2_api.router.id
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+
+  name = "cognito"
+  jwt_configuration {
+    audience = [var.cognito_client_id]
+    issuer   = "https://cognito-idp.${var.aws_region}.amazonaws.com/${var.cognito_user_pool_id}"
+  }
+}
+
 ########################################
 #  Lambda → API Integration (proxy)    #
 ########################################
@@ -31,6 +44,9 @@ resource "aws_apigatewayv2_route" "infer" {
   api_id    = aws_apigatewayv2_api.router.id
   route_key = "POST /infer"
   target    = "integrations/${aws_apigatewayv2_integration.lambda_proxy.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+
 }
 
 resource "aws_apigatewayv2_route" "stop" {

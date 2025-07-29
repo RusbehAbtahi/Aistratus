@@ -7,6 +7,11 @@ module "iam" {
 data "aws_ssm_parameter" "pool"   { name = "/tinyllama/${var.env}/cognito_user_pool_id" }
 data "aws_ssm_parameter" "client" { name = "/tinyllama/${var.env}/cognito_client_id" }
 
+# ----------  queue URL ----------
+data "aws_ssm_parameter" "job_queue_url" {
+  name = "/tinyllama/${var.env}/job_queue_url"
+}
+
 resource "aws_lambda_function" "router" {
   function_name = "tlfif-${var.env}-router"
   filename      = "${path.module}/../../../../../router.zip"
@@ -24,6 +29,7 @@ resource "aws_lambda_function" "router" {
       TL_DISABLE_LAM_ROUTER = "0"
       COGNITO_ISSUER = "https://cognito-idp.${var.aws_region}.amazonaws.com/${data.aws_ssm_parameter.pool.value}"
       COGNITO_AUD    = data.aws_ssm_parameter.client.value
+      JOB_QUEUE_URL         = data.aws_ssm_parameter.job_queue_url.value
     }
   }
 }

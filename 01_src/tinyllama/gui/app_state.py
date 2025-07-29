@@ -17,8 +17,10 @@ class AppState:
         self.auth_status: str = "off"       # login status: off | pending | ok | error
         self.current_cost: float = 0.0
         self.history: List[str] = []
-
         self.backend: str = "AWS TinyLlama"
+        # Newly added credentials fields
+        self.username: str = ""
+        self.password: str = ""
 
         # ---- internals ----
         self._lock = threading.Lock()
@@ -29,13 +31,16 @@ class AppState:
             "cost": [],
             "history": [],
             "backend": [],
+            # Subscribers for credential updates
+            "username": [],
+            "password": [],
         }
 
     # ---------------- subscription helpers ----------------
     def subscribe(self, event: str, cb: Callable[[Any], None]) -> None:
         """
         Register *cb* to be invoked when *event* changes.
-        Valid events: idle, auth, auth_status, cost, history, backend.
+        Valid events: idle, auth, auth_status, cost, history, backend, username, password.
         """
         if event not in self._subscribers:
             raise ValueError(f"Unknown event: {event}")
@@ -84,7 +89,18 @@ class AppState:
         with self._lock:
             self.backend = name
         self._publish("backend", name)
-        # >>> ADD >>> reset auth-status whenever backend changes
-        #           (puts lamp back to grey instantly in the GUI)
+        # Reset auth-status whenever backend changes
         self.set_auth_status("off")
-        # <<< ADD <<<
+
+    # ---------------- credential setters ----------------
+    def set_username(self, username: str) -> None:
+        """Store the entered username and notify subscribers."""
+        with self._lock:
+            self.username = username
+        self._publish("username", username)
+
+    def set_password(self, password: str) -> None:
+        """Store the entered password and notify subscribers."""
+        with self._lock:
+            self.password = password
+        self._publish("password", password)

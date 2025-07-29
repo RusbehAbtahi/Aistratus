@@ -7,6 +7,8 @@ locals {
     public_subnet_ids    = jsonencode(module.networking.public_subnet_ids)
     private_subnet_ids   = jsonencode(module.networking.private_subnet_ids)
     router_api_url       = module.apigateway.api_endpoint
+    job_queue_url        = module.sqs.queue_url
+    job_queue_arn        = module.sqs.queue_arn
   }
 }
 

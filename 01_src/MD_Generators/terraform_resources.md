@@ -1,6 +1,6 @@
 # AWS · Terraform-managed Resources
 
-*Generated: 2025-07-25T14:51:44.266138Z*
+*Generated: 2025-07-29T14:21:40.840331Z*
 
 ## Account / Workspace
 
@@ -9,6 +9,13 @@
 - **Workspace/Env** → `default`
 
 ---
+
+## Terraform Outputs
+
+| Name | Value |
+| --- | --- |
+| github_actions_role_arn | `arn:aws:iam::108782059508:role/tlfif-github-actions-deployer` |
+| global_ids | `{"cognito_client_id": "5ee02s1pjn72oa5jv6vitcbgnk", "cognito_domain": "cognito-idp.eu-central-1.amazonaws.com/eu-central-1_I0PbLkQ2h", "cognito_user_pool_id": "eu-central-1_I0PbLkQ2h", "job_queue_arn": "arn:aws:sqs:eu-central-1:108782059508:job-queue.fifo", "job_queue_url": "https://sqs.eu-central-1.amazonaws.com/108782059508/job-queue.fifo", "private_subnet_ids": "[\"subnet-0a7b7bf20ebb9d182\",\"subnet-03249955697111905\"]", "public_subnet_ids": "[\"subnet-04dc3995b390aed3d\"]", "router_api_url": "https://rjg3dvt5el.execute-api.eu-central-1.amazonaws.com", "vpc_id": "vpc-0f0ff03397956ee07"}` |
 
 ## Compute · AWS Lambda
 
@@ -67,22 +74,32 @@
 | --- | --- |
 | aws_ssm_parameter.endpoint_url | /tinyllama/default/router_api_url |
 | aws_ssm_parameter.client | /tinyllama/default/cognito_client_id |
+| aws_ssm_parameter.job_queue_url | /tinyllama/default/job_queue_url |
 | aws_ssm_parameter.pool | /tinyllama/default/cognito_user_pool_id |
+| aws_ssm_parameter.job_queue_arn | /tinyllama/default/job_queue_arn |
 | aws_ssm_parameter.global_ids | /tinyllama/default/cognito_client_id |
 | aws_ssm_parameter.global_ids | /tinyllama/default/cognito_domain |
 | aws_ssm_parameter.global_ids | /tinyllama/default/cognito_user_pool_id |
+| aws_ssm_parameter.global_ids | /tinyllama/default/job_queue_arn |
+| aws_ssm_parameter.global_ids | /tinyllama/default/job_queue_url |
 | aws_ssm_parameter.global_ids | /tinyllama/default/private_subnet_ids |
 | aws_ssm_parameter.global_ids | /tinyllama/default/public_subnet_ids |
 | aws_ssm_parameter.global_ids | /tinyllama/default/router_api_url |
 | aws_ssm_parameter.global_ids | /tinyllama/default/vpc_id |
+
+## SQS Queues
+
+| Name | ARN | URL |
+| ---- | --- | --- |
+| job-queue.fifo | arn:aws:sqs:eu-central-1:108782059508:job-queue.fifo | https://sqs.eu-central-1.amazonaws.com/108782059508/job-queue.fifo |
 
 ## IAM Roles
 
 | Role | Trusted by | Attached/Inline |
 | --- | --- | --- |
 | tlfif-github-actions-deployer | arn:aws:iam::108782059508:oidc-provider/token.actions.githubusercontent.com | 0/1 |
-| tlfif-default-router | lambda.amazonaws.com | 2/2 |
-| tlfif-default-router | lambda.amazonaws.com | 2/2 |
+| tlfif-default-router | lambda.amazonaws.com | 2/4 |
+| tlfif-default-router | lambda.amazonaws.com | 2/4 |
 
 ## Observability (CloudWatch)
 

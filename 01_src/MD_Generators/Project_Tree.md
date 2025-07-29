@@ -7,7 +7,6 @@ C:\0000\Prompt_Engineering\Projects\GTPRusbeh\Aistratus_2
 ├── lambda_entry.py
 ├── output.json
 ├── setup.py
-├── sitecustomize.py
 ├── tl_upload_bucket_policy.json
 ├── tl_upload_trust.json
 ├── tools.py
@@ -44,9 +43,13 @@ C:\0000\Prompt_Engineering\Projects\GTPRusbeh\Aistratus_2
 │   │       │   └── variables.tf
 │   │       ├── iam_router
 │   │       │   └── main.tf
-│   │       └── lambda_layers
+│   │       ├── lambda_layers
+│   │       │   ├── main.tf
+│   │       │   └── variables.tf
+│   │       └── sqs
 │   │           ├── main.tf
-│   │           └── variables.tf
+│   │           ├── outputs.tf
+│   │           └── variable.tf
 │   ├── outputs.tf
 │   ├── updated-policy.json
 │   └── variables.tf
@@ -58,9 +61,11 @@ C:\0000\Prompt_Engineering\Projects\GTPRusbeh\Aistratus_2
 │   │   ├── Epics1
 │   │   ├── MakeTrees.py
 │   │   ├── __init__.py
+│   │   ├── __pycache__
 │   │   ├── app_state.py
 │   │   ├── controllers
 │   │   │   ├── __init__.py
+│   │   │   ├── __pycache__
 │   │   │   ├── auth_controller.py
 │   │   │   ├── cost_controller.py
 │   │   │   ├── gpu_controller.py
@@ -69,6 +74,7 @@ C:\0000\Prompt_Engineering\Projects\GTPRusbeh\Aistratus_2
 │   │   ├── main.py
 │   │   └── thread_service.py
 │   ├── router
+│   │   ├── __init__.py
 │   │   ├── __pycache__
 │   │   └── handler.py
 │   └── utils
@@ -107,6 +113,7 @@ C:\0000\Prompt_Engineering\Projects\GTPRusbeh\Aistratus_2
     │   ├── test_auth.py
     │   ├── test_keys.py
     │   └── utils
+    ├── conftest (2).py
     ├── conftest.py
     ├── gui
     │   ├── __init__.py
