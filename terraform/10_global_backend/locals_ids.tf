@@ -10,5 +10,7 @@ locals {
     public_subnet_ids    = "${local.ssm_prefix}/public_subnet_ids"
     private_subnet_ids   = "${local.ssm_prefix}/private_subnet_ids"
     router_api_url       = "${local.ssm_prefix}/router_api_url"
+    job_queue_url        = "${local.ssm_prefix}/job_queue_url"
+    job_queue_arn        = "${local.ssm_prefix}/job_queue_arn"
   }
 }

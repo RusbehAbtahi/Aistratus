@@ -89,3 +89,18 @@ def test_expired_token(monkeypatch):
     )
     resp = lambda_handler(_event(token, {"prompt": "hi", "idle": 5}), None)
     assert resp["statusCode"] == 401
+import tinyllama.utils.jwt_tools as jt
+
+def test_sqs_enqueue(monkeypatch):
+    from tinyllama.router.handler import lambda_handler
+    # Patch SSM as needed (reuse _patch_ssm if present, else inline env)
+    ISS = "https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_TEST"
+    AUD = "local-test-client-id"
+    token = jt.make_token(iss=ISS, aud=AUD)
+    event = {
+        "headers": {"authorization": f"Bearer {token}"},
+        "body": '{"prompt":"SQS test","idle":5}',
+    }
+    resp = lambda_handler(event, None)
+    assert resp["statusCode"] == 202
+    assert "queued" in resp["body"]

@@ -1,3 +1,6 @@
 export MSYS_NO_PATHCONV=1
-
+cd /c/0000/Prompt_Engineering/Projects/GTPRusbeh/Aistratus_2 
+cd terraform/10_global_backend
 terraform apply -auto-approve -var="artifact_bucket=tinyllama-data-108782059508" -var="env=default"
+
+aws logs tail /aws/lambda/tlfif-default-router --since 5m --follow

@@ -1,73 +1,75 @@
-"""
-auth_controller.py
-==================
-
-Handles **login / logout** flows for whichever backend the user selects
-(AWS TinyLlama vs OpenAI).  The logic is deliberately minimal and
-backend-agnostic:
-
-* When the user clicks “Login” (or the GUI detects no token) we:
-    1. Read the selected backend from `AppState.backend`
-    2. Delegate to the matching *AuthClient* implementation off the UI
-       thread (via ThreadService)
-    3. Persist the returned token (if any) in `AppState.auth_token`
-    4. Update the GUI (success or error message)
-
-Real HTTP / OAuth calls are **stubbed** so you can run the GUI today.
-Replace the stub methods with live Cognito / OpenAI code later.
-"""
-
 from __future__ import annotations
-
-import webbrowser
+import boto3
 import time
-from typing import Protocol, Dict, Any, Callable, Optional
+from typing import Protocol, Dict, Any, Callable
+
 
 # ------------------------------------------------------------------ protocol
 class AuthClient(Protocol):
     """Minimum contract every backend-auth adapter must satisfy."""
-
     def login(self) -> str: ...
     def logout(self) -> None: ...
 
-
-# ------------------------------------------------------- stub implementations
+# ------------------------------------------------------- real implementations
 class AwsCognitoAuthClient:
     """
-    Simulates a Cognito-hosted UI login:
-
-    * Opens the user’s browser at LOGIN_URL
-    * ‘Waits’ 1 s, then returns a fake JWT
+    Authenticates against AWS Cognito User Pool dynamically discovering the App Client ID.
     """
-
-    LOGIN_URL = "https://example.auth.eu-central-1.amazoncognito.com/login"
+    def __init__(self, state) -> None:
+        self._state = state
+        self._region = 'eu-central-1'
 
     def login(self) -> str:
-        webbrowser.open_new(self.LOGIN_URL)
-        time.sleep(1.0)  # simulate user login delay
-        return "eyJhbGciOiAiR0RILUVuLmZh..."
+        from tinyllama.utils.ssm import get_id
+        # grab credentials from AppState
+        username = self._state.username
+        password = self._state.password
+
+        # Initialize Cognito IDP client
+        client = boto3.client('cognito-idp', region_name=self._region)
+
+        # Discover User Pool ID from SSM
+        user_pool_id = get_id("cognito_user_pool_id")
+        print("SSM cognito_user_pool_id =", user_pool_id)
+
+        # List clients for the pool
+        response = client.list_user_pool_clients(
+            UserPoolId=user_pool_id,
+            MaxResults=60
+        )
+        clients = response.get('UserPoolClients', [])
+        if not clients:
+            raise Exception(f"No user pool clients found for pool {user_pool_id}")
+
+        # Optionally filter by name or take the first
+        app_client_id = clients[0]['ClientId']
+        print("Discovered app_client_id      =", app_client_id)
+
+        # Perform authentication
+        auth_response = client.initiate_auth(
+            ClientId=app_client_id,
+            AuthFlow='USER_PASSWORD_AUTH',
+            AuthParameters={
+                'USERNAME': username,
+                'PASSWORD': password,
+            }
+        )
+        return auth_response['AuthenticationResult']['AccessToken']
 
     def logout(self) -> None:
-        # In real life: hit Cognito logout endpoint or forget refresh token
-        print("[Stub] AWS logout")
-
+        # No tokens to revoke for this simple implementation
+        print("[Auth] Logout invoked (no-op)")
 
 class OpenAiDummyAuthClient:
-    """
-    GPT 3.5 doesn’t need a user login in this desktop app; we only need
-    the API key (configured elsewhere).  We treat ‘login’ as a no-op that
-    returns a sentinel token so GUI logic stays symmetric.
-    """
-
     def login(self) -> str:
         time.sleep(0.2)
         return "<<openai-no-auth>>"
 
     def logout(self) -> None:
-        print("[Stub] OpenAI logout (no-op)")
+        print("[Auth] OpenAI logout")
 
-
-_CLIENTS_BY_BACKEND: Dict[str, Callable[[], AuthClient]] = {
+# Map backend names to auth client factories
+_CLIENTS_BY_BACKEND: Dict[str, Callable[..., AuthClient]] = {
     "AWS TinyLlama": AwsCognitoAuthClient,
     "OpenAI GPT-3.5": OpenAiDummyAuthClient,
 }
@@ -76,26 +78,25 @@ _CLIENTS_BY_BACKEND: Dict[str, Callable[[], AuthClient]] = {
 class AuthController:
     """
     Orchestrates login/logout for the selected backend.
-
-    Dependencies are injected for testability & Tk-decoupling.
     """
-
     def __init__(
         self,
-        state,          # AppState
-        service,        # ThreadService
-        view,           # TinyLlamaView
+        state,    # AppState
+        service,  # ThreadService
+        view,     # TinyLlamaView
     ) -> None:
         self._state = state
         self._service = service
         self._view = view
 
-    # ----------------------------- public API for GUI ---------------------
     def on_login(self) -> None:
-        """Called by view when user clicks the *Login* button."""
+        # Capture credentials and store
+        username = self._view.get_username()
+        password = self._view.get_password()
+        self._state.set_username(username)
+        self._state.set_password(password)
+
         backend = self._state.backend
-
-
         if backend == "OpenAI GPT-3.5":
             self._view.append_output("[Auth] No login required for OpenAI backend.")
             self._state.set_auth_status("ok")
@@ -105,12 +106,9 @@ class AuthController:
         if factory is None:
             self._view.append_output(f"❌ Unsupported backend: {backend}")
             return
-        client = factory()
+        client = factory(self._state)
 
-        # >>> ADD >>> set lamp to "pending" immediately when login starts
         self._state.set_auth_status("pending")
-        # <<< ADD <<<
-
         self._view.set_busy(True)
         self._service.run_async(
             self._login_worker,
@@ -119,64 +117,31 @@ class AuthController:
         )
 
     def on_logout(self) -> None:
-        """Optional hook if you add a *Logout* button."""
         backend = self._state.backend
         factory = _CLIENTS_BY_BACKEND.get(backend)
         if factory:
-            client = factory()
+            client = factory(self._state)
             self._service.run_async(client.logout)
-        self._state.set_auth("")  # clear token immediately
-
-        # >>> ADD >>> reset lamp to "off" on logout
+        self._state.set_auth("")
         self._state.set_auth_status("off")
-        # <<< ADD <<<
-
         self._view.append_output("[Auth] Logged out.")
 
-    # ------------------------------- workers ------------------------------
     @staticmethod
     def _login_worker(client: AuthClient) -> Dict[str, Any]:
-        """Runs off UI thread; returns dict with result or error."""
         try:
             token = client.login()
             return {"ok": True, "token": token}
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    # --------------------------- UI-thread callback -----------------------
     def _on_login_done(self, result: Dict[str, Any]) -> None:
         self._view.set_busy(False)
-        if result["ok"]:
-            token: str = result["token"]
+        if result.get("ok"):
+            token = result.get("token", "")
             self._state.set_auth(token)
-
-            # >>> ADD >>> set lamp to "ok" on successful login
             self._state.set_auth_status("ok")
-            # <<< ADD <<<
-
             self._view.append_output("[Auth] Login successful.")
         else:
-            # >>> ADD >>> set lamp to "error" on login failure
             self._state.set_auth_status("error")
-            # <<< ADD <<<
-
-            self._view.append_output("❌ AUTH ERROR: " + result["error"])
-
-
-# ---------------------------------------------------------------- usage tip
-"""
-How to wire this up (in main.py):
-
-    from tinyllama.gui.controllers.auth_controller import AuthController
-    ...
-    auth_ctrl = AuthController(state=state, service=service, view=view)
-    view.bind({
-        "send": prompt_ctrl.on_send,
-        "stop": gpu_ctrl.on_stop_gpu,
-        "login": auth_ctrl.on_login,   # ★ add this
-        "idle_changed": state.set_idle,
-        "backend_changed": state.set_backend,
-    })
-
-Add a *Login* button in TinyLlamaView and hook its command to the "login"
- callback key."""
+            error_msg = result.get("error", "Unknown error")
+            self._view.append_output("❌ AUTH ERROR: " + error_msg)

@@ -17,3 +17,11 @@ variable "aws_region" {
   description = "Region (must match provider)"
   type        = string
 }
+
+variable "cognito_user_pool_id" {
+  type = string
+}
+
+variable "cognito_client_id" {
+  type = string
+}

@@ -19,6 +19,9 @@
   "terraform\\10_global_backend\\modules\\services\\iam_router\\main.tf",
   "terraform\\10_global_backend\\modules\\services\\lambda_layers\\main.tf",
   "terraform\\10_global_backend\\modules\\services\\lambda_layers\\variables.tf",
+  "terraform\\10_global_backend\\modules\\services\\sqs\\main.tf",
+  "terraform\\10_global_backend\\modules\\services\\sqs\\outputs.tf",
+  "terraform\\10_global_backend\\modules\\services\\sqs\\variable.tf",
   "terraform\\10_global_backend\\allow-delete-route.json",
   "terraform\\10_global_backend\\allow-manage-router.json",
   "terraform\\10_global_backend\\updated-policy.json"

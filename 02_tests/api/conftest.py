@@ -1,21 +1,32 @@
-# 02_tests/api/conftest.py
+import os
+import json
+import pytest
 
-import requests
-from dotenv import load_dotenv
-load_dotenv(dotenv_path=".env_public", override=True)
+@pytest.fixture(autouse=True)
+def _patch_ssm(monkeypatch, tmp_path):
+    # existing SSM patching...
+    monkeypatch.setenv("AWS_SSM_PARAMETER_PREFIX", "/myapp/dev")
+    monkeypatch.setenv("COGNITO_POOL_REGION", "eu-central-1")
+    monkeypatch.setenv("COGNITO_POOL_ID", "eu-central-1_TEST")
+    monkeypatch.setenv("COGNITO_APP_CLIENT_ID", "local-test-client-id")
 
+    test_jwks_path = tmp_path / "mock_jwks.json"
+    test_jwks_path.write_text(json.dumps({
+        "keys": [
+            {
+                "kty": "RSA",
+                "kid": "test-key",
+                "use": "sig",
+                "n": "...",
+                "e": "AQAB"
+            }
+        ]
+    }))
+    monkeypatch.setenv("SSM_COGNITO_JWKS_PATH", str(test_jwks_path))
 
-def _fake_requests_get(url, *args, **kwargs):
-    if ".well-known/jwks.json" in url:
-        class _Resp:
-            status_code = 200
-            def json(self):
-                return {"keys": [
-                    {"kid": "dummy", "kty": "RSA", "alg": "RS256", "use": "sig", "n": "00", "e": "AQAB"}
-                ]}
-            def raise_for_status(self): pass
-        return _Resp()
-    # fallback to real requests for all other URLs
-    return requests.sessions.Session().get(url, *args, **kwargs)
+    # ─── NEW: Patch SQS URL into handler module ─────────────────────────────────
+    monkeypatch.setenv("JOB_QUEUE_URL", "https://dummy-queue-url")
+    from tinyllama.router import handler
+    handler.QUEUE_URL = os.environ["JOB_QUEUE_URL"]
 
-requests.get = _fake_requests_get  # Only affects api tests!
+    return monkeypatch

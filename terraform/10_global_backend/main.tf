@@ -92,4 +92,13 @@ module "apigateway" {
   aws_region          = var.aws_region
   router_lambda_arn  = module.compute.router_invoke_arn
   router_lambda_name  = module.compute.router_function_name
+  cognito_user_pool_id = module.auth.cognito_user_pool_id
+  cognito_client_id    = module.auth.cognito_client_id
+
+
+}
+
+module "sqs" {
+  source = "./modules/services/sqs"
+  env    = var.env
 }

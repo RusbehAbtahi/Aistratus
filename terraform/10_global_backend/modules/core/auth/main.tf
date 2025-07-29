@@ -12,7 +12,10 @@ resource "aws_cognito_user_pool" "main" {
 resource "aws_cognito_user_pool_client" "gui" {
   name         = "tl-fif-desktop"
   user_pool_id = aws_cognito_user_pool.main.id
-
+  explicit_auth_flows = [
+    "ALLOW_USER_PASSWORD_AUTH",
+    "ALLOW_REFRESH_TOKEN_AUTH"
+  ]
 #  lifecycle {
 #    prevent_destroy = true
 #    ignore_changes  = all
