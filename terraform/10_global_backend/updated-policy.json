@@ -343,7 +343,25 @@
               "lambda:RemovePermission"
     ],
               "Resource": "arn:aws:lambda:eu-central-1:108782059508:function:tlfif-default-router"
-}
+    },
+
+
+   {
+                "Sid": "AllowManageSQSJobQueue",
+                "Effect": "Allow",
+                "Action": [
+                  "sqs:GetQueueAttributes",
+                  "sqs:GetQueueUrl",
+                  "sqs:ListQueueTags",
+                  "sqs:SetQueueAttributes",
+                  "sqs:CreateQueue",
+                    "sqs:DeleteQueue",
+                  "sqs:TagQueue",
+                  "sqs:UntagQueue"
+      ],
+                "Resource": "arn:aws:sqs:eu-central-1:108782059508:job-queue.fifo"
+  }
+
 
 
 
