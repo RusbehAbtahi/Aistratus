@@ -1,4 +1,3 @@
-
 # Aistratus
 
 Aistratus is a personal cloud-native project that deploys a custom TinyLlama workflow on AWS and serves as a rigorous testbed for modern engineering practice. Everything is Infrastructure-as-Code: Terraform plus an environment-aware SSM registry enables reproducible, destroy/apply deployments without manual steps. Beyond running an LLM flow, the project demonstrates disciplined cloud architecture, DevOps, and CI/CD in a real AWS context.
@@ -59,14 +58,12 @@ Notes:
 
 ## Architecture Development & MVP Timeline (pre-GUI)
 
-Key milestones before GUI-001 (2025-06-13), derived from your commit history:
+Key milestones before GUI-001 (2025-06-13), derived from commit history:
 
 * 2025-05-26 — Initial repo foundation committed: README, architecture docs/diagrams.
 * 2025-05-28 — Security/IaC scaffold added: IAM, S3, Secrets scripts and policy files; README updated.
-* 2025-06-03 to 2025-06-05 — Orchestration & CI/CD baseline: package refactor to `tinyllama`, Lambda router moved under orchestration, Terraform placeholder added; deployment artifacts plus buildspec/trust policies added and hardened.
-* 2025-06-06 to 2025-06-12 — Architecture documentation matured: “final” and intermediate diagrams, requirements, product-owner wish; Prompt-Maker docs; CLI automation for epics.
-
-(If you want the ultra-precise hash/date lines, keep your `commit_history.txt` alongside the repo for auditors.)
+* 2025-06-03 to 2025-06-05 — Orchestration & CI/CD baseline: package refactor to `tinyllama`, Lambda router moved under orchestration, Terraform placeholder; deployment artifacts plus buildspec/trust policies added and hardened.
+* 2025-06-06 to 2025-06-12 — Architecture documentation matured: final/intermediate diagrams, requirements, product-owner wish; Prompt-Maker docs; CLI automation for epics.
 
 ---
 
@@ -146,5 +143,3 @@ Next milestones include EC2 inference integration, cost management automation, a
 **Author**: Rusbeh Abtahi
 **Contact**: [roosbab@gmail.com](mailto:roosbab@gmail.com)
 **Created**: May 2025
-
-
