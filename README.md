@@ -11,32 +11,32 @@ Aistratus is AWS-native and IaC-driven. API Gateway fronts a Lambda Router prote
 ```mermaid
 flowchart TD
   subgraph Client
-    GUI[Desktop GUI (MVC)]
+    GUI["Desktop GUI (MVC)"]
   end
 
   subgraph Edge
-    APIGW[API Gateway]
-    COG[Cognito-compatible JWT]
+    APIGW["API Gateway"]
+    COG["Cognito-compatible JWT"]
   end
 
   subgraph Compute
-    LMB[Lambda Router]
-    EC2[(EC2 Inference Node)]:::pending
+    LMB["Lambda Router"]
+    EC2[("EC2 Inference Node")]
   end
 
   subgraph Platform
-    SSM[SSM Parameter Store]
-    S3[S3 (Terraform State / Lambda Layers)]
-    SQS[[SQS FIFO Job Queue]]:::done
-    CW[CloudWatch (logs/alarms)]:::partial
+    SSM["SSM Parameter Store"]
+    S3["S3 (Terraform State / Lambda Layers)"]
+    SQS[["SQS FIFO Job Queue"]]
+    CW["CloudWatch (logs/alarms)"]
   end
 
   GUI --> APIGW
   COG --> APIGW
   APIGW --> LMB
   LMB --> SSM
-  LMB -. enqueue jobs .-> SQS
-  EC2 -. consume jobs .-> SQS
+  LMB -.-> SQS
+  EC2 -.-> SQS
   LMB --> CW
   EC2 --> CW
 
@@ -48,6 +48,7 @@ flowchart TD
   class CW partial;
   class EC2 pending;
 ```
+
 
 Notes:
 
