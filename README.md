@@ -48,7 +48,7 @@ flowchart TD
   class APIGW,LMB,SSM,S3,GUI,SQS done;
   class CW partial;
   class EC2 pending;
-````
+```
 
 Notes:
 
